@@ -6185,13 +6185,23 @@ mod tests {
 
     #[test]
     fn absolute_file_paths_require_an_absolute_path() {
-        assert_eq!(
-            abs_path("  /etc/hosts  "),
-            Ok((
+        #[cfg(unix)]
+        let (input, expected) = (
+            "  /etc/hosts  ",
+            (
                 "/etc/hosts".to_string(),
-                std::path::PathBuf::from("/etc/hosts")
-            )),
+                std::path::PathBuf::from("/etc/hosts"),
+            ),
         );
+        #[cfg(windows)]
+        let (input, expected) = (
+            r"  C:\Windows\System32\drivers\etc\hosts  ",
+            (
+                r"C:\Windows\System32\drivers\etc\hosts".to_string(),
+                std::path::PathBuf::from(r"C:\Windows\System32\drivers\etc\hosts"),
+            ),
+        );
+        assert_eq!(abs_path(input), Ok(expected));
         for path in ["", "   ", "relative/path", "../secret", &"/x".repeat(3000)] {
             assert!(abs_path(path).is_err(), "accepted {path:?}");
         }

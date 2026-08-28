@@ -494,7 +494,10 @@ mod tests {
         assert_eq!(target.dest, "mybox");
         assert!(target.extra_opts.is_empty());
         // No `-p`/`-o Strict…` beyond the shared multiplexing opts.
+        #[cfg(not(windows))]
         assert_eq!(ssh_opts(&target).len(), 10);
+        #[cfg(windows)]
+        assert_eq!(ssh_opts(&target).len(), 4);
     }
 
     #[test]
@@ -531,6 +534,7 @@ mod tests {
 
     /// Explicit targets on the same host but different ports must not share a
     /// ControlMaster socket — the opts are part of the ControlPath hash.
+    #[cfg(not(windows))]
     #[test]
     fn control_path_differs_per_port() {
         let control_path = |t: &SshTarget| {

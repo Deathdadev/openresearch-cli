@@ -74,7 +74,7 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test --locked
+        run: cargo test --locked -- --test-threads=1
 
   # Guards the tag-on-bump release flow (tag-release.yml): the version in
   # Cargo.toml may only move forward, may not reuse an already-released tag,

@@ -192,14 +192,18 @@ mod tests {
 
     #[test]
     fn reads_every_imported_variable() {
-        let vars = parse_probe(
-            &fenced(
-                "/opt/homebrew/bin:/usr/bin\0/data\0/share\0/config\0/open.db\0/claude\0/secure\0/codex\0",
-            ),
-            M,
-        )
-        .unwrap();
+        #[cfg(unix)]
+        let payload = "/opt/homebrew/bin:/usr/bin\0/data\0/share\0/config\0/open.db\0/claude\0/secure\0/codex\0";
+        #[cfg(windows)]
+        let payload = "C:\\opt\\homebrew\\bin;C:\\Windows\\System32\0/data\0/share\0/config\0/open.db\0/claude\0/secure\0/codex\0";
+        let vars = parse_probe(&fenced(payload), M).unwrap();
+        #[cfg(unix)]
         assert_eq!(vars["PATH"], OsString::from("/opt/homebrew/bin:/usr/bin"));
+        #[cfg(windows)]
+        assert_eq!(
+            vars["PATH"],
+            OsString::from("C:\\opt\\homebrew\\bin;C:\\Windows\\System32")
+        );
         assert_eq!(vars["ORX_DATA_DIR"], OsString::from("/data"));
         assert_eq!(vars["XDG_DATA_HOME"], OsString::from("/share"));
         assert_eq!(vars["XDG_CONFIG_HOME"], OsString::from("/config"));
@@ -214,8 +218,15 @@ mod tests {
 
     #[test]
     fn unset_variables_are_dropped_so_lookups_fall_through() {
-        let vars = parse_probe(&fenced("/usr/bin\0\0\0\0\0\0\0\0"), M).unwrap();
+        #[cfg(unix)]
+        let payload = "/usr/bin\0\0\0\0\0\0\0\0";
+        #[cfg(windows)]
+        let payload = "C:\\Windows\\System32\0\0\0\0\0\0\0\0";
+        let vars = parse_probe(&fenced(payload), M).unwrap();
+        #[cfg(unix)]
         assert_eq!(vars["PATH"], OsString::from("/usr/bin"));
+        #[cfg(windows)]
+        assert_eq!(vars["PATH"], OsString::from("C:\\Windows\\System32"));
         assert!(!vars.contains_key("ORX_DATA_DIR"));
         assert!(!vars.contains_key("OPENCODE_DB"));
         assert!(!vars.contains_key("CLAUDE_CONFIG_DIR"));

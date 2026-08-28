@@ -1867,6 +1867,7 @@ mod tests {
         assert_eq!(classify("fatal: could not read from remote"), None);
     }
 
+    #[cfg(unix)]
     #[test]
     fn the_upload_page_posts_every_file_as_a_data_url() {
         let temporary = TemporaryDirectory::new("orx-overleaf-test").unwrap();
