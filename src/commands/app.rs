@@ -258,8 +258,11 @@ mod imp {
                 }
             }
             while let Ok(event) = TrayIconEvent::receiver().try_recv() {
-                if event.button == tray_icon::MouseButton::Left
-                    && event.button_state == tray_icon::MouseButtonState::Up
+                if let TrayIconEvent::Click {
+                    button: tray_icon::MouseButton::Left,
+                    button_state: tray_icon::MouseButtonState::Up,
+                    ..
+                } = event
                 {
                     super::focus_or_open(&url_for_menu);
                 }

@@ -214,9 +214,9 @@ fn install_content_addressed(
     }
 }
 
-fn restrict_snapshot_file(path: &Path) -> Result<()> {
+fn restrict_snapshot_file(_path: &Path) -> Result<()> {
     #[cfg(unix)]
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    std::fs::set_permissions(_path, std::fs::Permissions::from_mode(0o600))?;
     Ok(())
 }
 
