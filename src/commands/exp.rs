@@ -139,7 +139,7 @@ pub(crate) fn spawn_detached_supervise(run_id: &str) -> Result<()> {
             e
         )
     })?;
-    let mut cmd = std::process::Command::new(exe);
+    let mut cmd = crate::process::command(exe);
     cmd.arg("supervise")
         .arg(run_id)
         .stdin(std::process::Stdio::null())
@@ -159,6 +159,7 @@ pub(crate) fn spawn_detached_supervise(run_id: &str) -> Result<()> {
         use std::os::unix::process::CommandExt;
         cmd.process_group(0);
     }
+    crate::process::configure_detached(&mut cmd);
     cmd.spawn()
         .map_err(|e| anyhow!("Could not spawn `orx supervise {}`: {}", run_id, e))?;
     Ok(())

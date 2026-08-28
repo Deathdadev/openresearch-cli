@@ -7,7 +7,7 @@
 
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 #[cfg(unix)]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
@@ -129,7 +129,8 @@ fn archive(repo: &Path, revision: &str, format: &str, destination: &Path) -> Res
     #[cfg(unix)]
     options.mode(0o600);
     let file = options.open(destination)?;
-    let output = Command::new("git")
+    let mut cmd = crate::process::command("git");
+    let output = cmd
         .current_dir(repo)
         .args(["archive", &format!("--format={format}"), revision])
         .stdout(Stdio::from(file))
@@ -214,9 +215,9 @@ fn install_content_addressed(
     }
 }
 
-fn restrict_snapshot_file(path: &Path) -> Result<()> {
+fn restrict_snapshot_file(_path: &Path) -> Result<()> {
     #[cfg(unix)]
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    std::fs::set_permissions(_path, std::fs::Permissions::from_mode(0o600))?;
     Ok(())
 }
 

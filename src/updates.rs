@@ -25,7 +25,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{anyhow, Result};
 
+#[cfg(target_os = "macos")]
 pub mod macos_app;
+#[cfg(windows)]
+pub mod windows_app;
 
 /// GitHub repo the released binaries come from.
 pub const REPO_URL: &str = "https://github.com/alphaXiv/openresearch-cli";
@@ -157,17 +160,27 @@ pub struct Receipt {
 }
 
 pub fn receipt_path() -> PathBuf {
-    // Through `shell_env`, like `config::config_dir()`: in macOS app mode the
-    // user's real XDG_CONFIG_HOME lives only in this process.
-    let base = crate::local::shell_env::var("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            dirs::home_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join(".config")
-        });
-    base.join(APP_NAME)
-        .join(format!("{}-receipt.json", APP_NAME))
+    #[cfg(windows)]
+    {
+        let base = dirs::data_local_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join(APP_NAME);
+        base.join(format!("{}-receipt.json", APP_NAME))
+    }
+    #[cfg(not(windows))]
+    {
+        // Through `shell_env`, like `config::config_dir()`: in macOS app mode the
+        // user's real XDG_CONFIG_HOME lives only in this process.
+        let base = crate::local::shell_env::var("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                dirs::home_dir()
+                    .unwrap_or_else(|| PathBuf::from("."))
+                    .join(".config")
+            });
+        base.join(APP_NAME)
+            .join(format!("{}-receipt.json", APP_NAME))
+    }
 }
 
 /// Reads the install receipt. `Ok(None)` when it does not exist (i.e. the
@@ -252,15 +265,21 @@ impl InstallChannel {
     }
 }
 
-/// The `.app` root for a bundle executable at `<root>.app/Contents/MacOS/<exe>`.
+/// The desktop app install root for a bundle executable.
 /// Split out from [`detect_channel`] so it can be tested off macOS.
 fn app_bundle_root(exe: &Path) -> Option<PathBuf> {
-    let macos = exe.parent()?;
-    if !macos.ends_with("Contents/MacOS") {
-        return None;
+    if let Some(macos) = exe.parent() {
+        if macos.ends_with("Contents/MacOS") {
+            return macos.parent()?.parent().map(Path::to_path_buf);
+        }
     }
-    // `Contents/MacOS` -> `Contents` -> the bundle root.
-    macos.parent()?.parent().map(Path::to_path_buf)
+    if exe.file_name() == Some(std::ffi::OsStr::new("OpenResearch.exe")) {
+        return exe
+            .parent()
+            .filter(|dir| dir.file_name() == Some(std::ffi::OsStr::new("OpenResearch")))
+            .map(Path::to_path_buf);
+    }
+    None
 }
 
 /// Classify `exe`. The bundle test comes first: the bundled binary has no
@@ -575,7 +594,7 @@ fn spawn_background_update() {
 /// config dir than the parent reads — losing the restart signal and the backoff,
 /// and failing to serialize against a terminal `orx update`.
 fn updater_command() -> Result<tokio::process::Command> {
-    let mut cmd = tokio::process::Command::new(std::env::current_exe()?);
+    let mut cmd = crate::process::tokio_command(std::env::current_exe()?);
     cmd.args(["update", "--background"])
         .stdin(std::process::Stdio::null());
     if let Some(path) = crate::local::shell_env::search_path() {
@@ -697,10 +716,24 @@ pub fn status() -> UpdateStatus {
 /// exist for it. `Ok(None)` means "nothing newer published for this channel".
 pub async fn fetch_latest_for_channel(timeout: Duration) -> Result<Option<Version>> {
     if matches!(current_channel(), Ok(InstallChannel::AppBundle(_))) {
-        return Ok(macos_app::fetch_manifest(timeout)
-            .await?
-            .map(|manifest| Version::parse(&manifest.version))
-            .transpose()?);
+        #[cfg(target_os = "macos")]
+        {
+            return Ok(macos_app::fetch_manifest(timeout)
+                .await?
+                .map(|manifest| Version::parse(&manifest.version))
+                .transpose()?);
+        }
+        #[cfg(windows)]
+        {
+            return Ok(windows_app::fetch_manifest(timeout)
+                .await?
+                .map(|manifest| Version::parse(&manifest.version))
+                .transpose()?);
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            return Ok(None);
+        }
     }
     Ok(Some(fetch_latest(timeout).await?.version))
 }

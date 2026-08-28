@@ -31,12 +31,6 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
-use serde::Deserialize;
-use serde_json::Value;
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command;
-
 use super::detect::{
     bin_version, jwt_payload, nonempty_str, parse_version, probe_bin, read_json, resolve_symlinks,
     title_case, HarnessInfo, ModelInfo,
@@ -60,6 +54,10 @@ use crate::local::native_store::{self, NativeStore};
 use crate::local::opencode::ensure_playbook;
 use crate::local::shell_env::find_on_path;
 use crate::store::{Store, StoredChatMessage};
+use async_trait::async_trait;
+use serde::Deserialize;
+use serde_json::Value;
+use tokio::io::{AsyncBufReadExt, BufReader};
 
 // FALLBACK model table, used only when the app-server catalog is unreachable
 // (codex < 0.144's legacy exec path, or a failed/timed-out `model/list`). The
@@ -148,7 +146,7 @@ fn codex_model_reasoning(model: &str) -> Option<&'static [&'static str]> {
 /// (the server already filters them by default; the guard is belt-and-braces).
 async fn codex_model_list(bin: &Path, configured_effort: Option<&str>) -> Option<Vec<ModelInfo>> {
     let fut = async {
-        let mut cmd = Command::new(bin);
+        let mut cmd = crate::process::tokio_command(bin);
         cmd.arg("app-server")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -403,7 +401,7 @@ pub(crate) fn find_codex_required() -> Result<PathBuf> {
 /// and the caller keeps the placeholder title.
 async fn codex_generate_title(bin: &Path, first_message: &str) -> Option<String> {
     let fut = async {
-        let mut cmd = Command::new(bin);
+        let mut cmd = crate::process::tokio_command(bin);
         cmd.args(["exec", "--ephemeral", "--json", "--skip-git-repo-check"])
             .args(["-c", "sandbox_mode=\"read-only\""])
             .args(["-c", "approval_policy=\"never\""])
@@ -3059,13 +3057,15 @@ async fn start_thread(ctx: &mut TurnCtx, client: &CodexClient, params: Value) ->
 /// clone and worktree). Canonicalized because codex requires absolute roots
 /// and seatbelt matches real paths (`/var` vs `/private/var`).
 async fn shared_git_dir(workspace: &Path) -> Option<PathBuf> {
-    let out = Command::new("git")
-        .args(["rev-parse", "--git-common-dir"])
-        .current_dir(workspace)
-        .stdin(Stdio::null())
-        .output()
-        .await
-        .ok()?;
+    let out = {
+        let mut cmd = crate::process::tokio_command("git");
+        cmd.args(["rev-parse", "--git-common-dir"])
+            .current_dir(workspace)
+            .stdin(Stdio::null())
+            .output()
+            .await
+            .ok()?
+    };
     if !out.status.success() {
         return None;
     }
@@ -3241,7 +3241,7 @@ async fn run_turn_exec(ctx: &mut TurnCtx) -> Result<()> {
     let codex_home = tokio::task::spawn_blocking(move || native_store::prepare_codex(native_store))
         .await
         .map_err(|error| anyhow!("Codex config preparation failed: {error}"))??;
-    let mut cmd = Command::new(&bin);
+    let mut cmd = crate::process::tokio_command(&bin);
     match (&ctx.native_session_id, &native_session) {
         (Some(native_id), Some(_)) => {
             cmd.args(["exec", "resume", native_id]);

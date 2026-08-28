@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use serde_json::json;
-use tokio::process::{Child, Command};
+use tokio::process::Child;
 use tokio::sync::Mutex;
 
 use crate::error::{anyhow, Result};
@@ -213,10 +213,11 @@ fn playbook_md(project: &LocalProject, state: &ProjectState) -> String {
         .map(|skill| format!("- `{}`", skill.name))
         .collect::<Vec<_>>()
         .join("\n");
-    let template = SYSTEM_PROMPT
+    let normalized_prompt = SYSTEM_PROMPT.replace("\r\n", "\n");
+    let template = normalized_prompt
         .split_once("-->\n\n")
         .map(|(_, rest)| rest)
-        .unwrap_or(SYSTEM_PROMPT);
+        .unwrap_or(normalized_prompt.as_str());
     template
         .replace("{name}", name)
         .replace("{id}", id)
@@ -451,7 +452,7 @@ async fn spawn_agent(
         .open(agent_log_path())
         .map_err(|e| anyhow!("Could not open {}: {}", agent_log_path().display(), e))?;
 
-    let mut cmd = Command::new(&bin);
+    let mut cmd = crate::process::tokio_command(&bin);
     cmd.arg("serve")
         .arg("--port")
         .arg(port.to_string())

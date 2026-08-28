@@ -18,13 +18,24 @@ literature, develop hypotheses, run experiments, and produce research artifacts.
 ## Get started
 
 Download the local desktop app from
-[openresearch.sh/download](https://openresearch.sh/download), or install the
-CLI on macOS or Linux:
+[openresearch.sh/download](https://openresearch.sh/download), or install the CLI:
+
+**macOS or Linux**
 
 ```sh
 curl -LsSf https://openresearch.sh/install.sh | sh
 orx up
 ```
+
+**Windows**
+
+```powershell
+irm https://github.com/alphaXiv/openresearch-cli/releases/latest/download/openresearch-cli-installer.ps1 | iex
+orx up
+```
+
+Download the Windows desktop app from
+[GitHub Releases](https://github.com/alphaXiv/openresearch-cli/releases/latest) (`OpenResearchSetup.exe`).
 
 `orx up` opens the local dashboard at `http://127.0.0.1:4791`.
 

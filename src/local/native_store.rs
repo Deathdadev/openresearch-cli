@@ -421,6 +421,7 @@ fn create_symlink(source: &Path, destination: &Path) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use super::*;
 
     #[cfg(unix)]

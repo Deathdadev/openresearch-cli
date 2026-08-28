@@ -24,11 +24,6 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
-use async_trait::async_trait;
-use serde_json::Value;
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command;
-
 use super::detect::{
     bin_version, nonempty_str, parse_version, probe_bin, read_json, HarnessAuthState, HarnessInfo,
     ModelInfo,
@@ -48,6 +43,9 @@ use crate::local::claude::{SpawnConfig, SpawnSpec, TurnEvent};
 use crate::local::native_store::{self, NativeStore};
 use crate::local::opencode::ensure_playbook;
 use crate::local::shell_env::find_on_path;
+use async_trait::async_trait;
+use serde_json::Value;
+use tokio::io::{AsyncBufReadExt, BufReader};
 
 /// FALLBACK model list, used only when the `list_models` control request fails
 /// (a CLI too old to answer it, or a spawn/timeout failure). The primary source
@@ -116,7 +114,7 @@ fn parse_auth_status(success: bool, stdout: &[u8]) -> AuthProbe {
 }
 
 async fn probe_auth(bin: &Path) -> AuthProbe {
-    let mut cmd = Command::new(bin);
+    let mut cmd = crate::process::tokio_command(bin);
     cmd.args(["auth", "status", "--json"])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -192,7 +190,7 @@ pub(crate) fn auth_recovery_note() -> &'static str {
 /// Any failure reports unsupported: a missing choice is a smaller harm than a
 /// choice that silently runs at the default effort.
 async fn claude_accepts_ultracode(bin: &Path) -> bool {
-    let mut cmd = Command::new(bin);
+    let mut cmd = crate::process::tokio_command(bin);
     cmd.args(["--effort", CLAUDE_ULTRACODE, "--version"])
         .stdin(Stdio::null());
     prepare_env(&mut cmd);
@@ -222,7 +220,7 @@ async fn claude_accepts_ultracode(bin: &Path) -> bool {
 /// caller falls back to the static table.
 async fn claude_list_models(bin: &Path, ultracode: bool) -> Option<Vec<ModelInfo>> {
     let fut = async {
-        let mut cmd = Command::new(bin);
+        let mut cmd = crate::process::tokio_command(bin);
         cmd.args([
             "--print",
             "--input-format",
@@ -372,7 +370,7 @@ fn has_api_credential() -> bool {
 /// and leaves the placeholder title in place. Every other failure (spawn,
 /// timeout, garbage output) degrades the same silent way.
 async fn claude_generate_title(bin: &Path, first_message: &str) -> Option<String> {
-    let mut cmd = Command::new(bin);
+    let mut cmd = crate::process::tokio_command(bin);
     cmd.args([
         "-p",
         &super::title::title_prompt(first_message),
@@ -430,7 +428,18 @@ async fn claude_generate_title(bin: &Path, first_message: &str) -> Option<String
 pub(crate) fn find_claude() -> Option<PathBuf> {
     find_on_path("claude").or_else(|| {
         let home = dirs::home_dir()?;
-        [".claude/local/claude", ".local/bin/claude"]
+        #[cfg(windows)]
+        let candidates = [
+            ".claude/local/claude.exe",
+            ".claude/local/claude.cmd",
+            ".claude/local/claude",
+            ".local/bin/claude.exe",
+            ".local/bin/claude.cmd",
+            ".local/bin/claude",
+        ];
+        #[cfg(not(windows))]
+        let candidates = [".claude/local/claude", ".local/bin/claude"];
+        candidates
             .iter()
             .map(|rel| home.join(rel))
             .find(|c| c.is_file())

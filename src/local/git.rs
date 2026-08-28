@@ -57,12 +57,24 @@ pub fn clone_path(owner: &str, repo: &str) -> PathBuf {
 fn cache_root() -> PathBuf {
     std::env::var_os("ORX_CACHE_DIR")
         .map(PathBuf::from)
+        .or_else(default_cache_root)
         .unwrap_or_else(|| {
             dirs::home_dir()
                 .unwrap_or_else(|| PathBuf::from("."))
                 .join(".cache")
                 .join("openresearch")
         })
+}
+
+fn default_cache_root() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        dirs::cache_dir().map(|dir| dir.join("openresearch"))
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
 }
 
 /// Root for per-chat-session worktrees of a project repository.
@@ -135,11 +147,17 @@ pub fn existing_session_worktree_path(
     }
 }
 
+fn git_command() -> Command {
+    let mut cmd = crate::process::command("git");
+    cmd.env("GIT_TERMINAL_PROMPT", "0");
+    cmd
+}
+
 /// Run git with `args`, returning trimmed stdout; failures carry git's stderr.
 /// Headless: git must fail fast rather than prompt on /dev/tty (these calls
 /// run under a server, where a prompt would hang a worker forever).
 fn git(dir: Option<&Path>, args: &[&str]) -> Result<String> {
-    let mut cmd = Command::new("git");
+    let mut cmd = git_command();
     if let Some(dir) = dir {
         cmd.current_dir(dir);
     }
@@ -244,7 +262,7 @@ fn git_context_bytes(
     index_file: &Path,
     args: &[&str],
 ) -> Result<Vec<u8>> {
-    let out = Command::new("git")
+    let out = git_command()
         .current_dir(work_tree)
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_DIR", git_dir)
@@ -593,7 +611,7 @@ fn stage_initial_snapshot(path: &Path, included_paths: &[Vec<u8>]) -> Result<()>
         return Ok(());
     }
 
-    let mut child = Command::new("git")
+    let mut child = git_command()
         .current_dir(path)
         .env("GIT_TERMINAL_PROMPT", "0")
         .args(["add", "-f", "--pathspec-from-file=-", "--pathspec-file-nul"])
@@ -626,7 +644,7 @@ fn stage_initial_snapshot(path: &Path, included_paths: &[Vec<u8>]) -> Result<()>
 
 fn remove_excluded_paths_from_index(path: &Path, excluded_paths: &[Vec<u8>]) -> Result<()> {
     for paths in excluded_paths.chunks(128) {
-        let mut command = Command::new("git");
+        let mut command = git_command();
         command
             .current_dir(path)
             .env("GIT_TERMINAL_PROMPT", "0")
@@ -796,7 +814,7 @@ pub fn clone_public(url: &str, path: &Path, shallow: bool) -> Result<()> {
         .write(true)
         .create_new(true)
         .open(&empty_config)?;
-    let mut command = Command::new("git");
+    let mut command = git_command();
     command
         .current_dir(std::env::temp_dir())
         .env("GIT_TERMINAL_PROMPT", "0")
@@ -1423,7 +1441,13 @@ pub fn prepare_shallow_repository_for_publication(repo_path: &Path) -> Result<bo
     Ok(true)
 }
 
-const GITHUB_CREDENTIAL_HELPER: &str = "!gh auth git-credential";
+const GITHUB_CREDENTIAL_HELPER: &str = "gh auth git-credential";
+
+fn github_credential_helper() -> String {
+    super::shell_env::find_on_path("gh")
+        .map(|path| format!("{} auth git-credential", path.display()))
+        .unwrap_or_else(|| GITHUB_CREDENTIAL_HELPER.to_string())
+}
 
 fn redact_remote_urls(text: &str) -> String {
     text.split_whitespace()
@@ -1440,7 +1464,7 @@ fn redact_remote_urls(text: &str) -> String {
 }
 
 fn authenticated_git_command(repo_path: &Path) -> Command {
-    let mut command = Command::new("git");
+    let mut command = git_command();
     command
         .current_dir(repo_path)
         .env("GH_HOST", "github.com")
@@ -1457,9 +1481,9 @@ fn authenticated_git_command(repo_path: &Path) -> Command {
         .env("GIT_CONFIG_KEY_0", "credential.helper")
         .env("GIT_CONFIG_VALUE_0", "")
         .env("GIT_CONFIG_KEY_1", "credential.helper")
-        .env("GIT_CONFIG_VALUE_1", GITHUB_CREDENTIAL_HELPER)
+        .env("GIT_CONFIG_VALUE_1", github_credential_helper())
         .env("GIT_CONFIG_KEY_2", "core.hooksPath")
-        .env("GIT_CONFIG_VALUE_2", "/dev/null");
+        .env("GIT_CONFIG_VALUE_2", crate::process::null_device());
     #[cfg(unix)]
     command.process_group(0);
     command
@@ -1525,13 +1549,7 @@ fn authenticated_git(repo_path: &Path, args: &[&str], timeout: Duration) -> Resu
 }
 
 fn terminate_git_process_tree(child: &mut Child) {
-    #[cfg(unix)]
-    unsafe {
-        // Git owns this process group, including credential-bearing transport children.
-        libc::kill(-(child.id() as i32), libc::SIGKILL);
-    }
-    #[cfg(not(unix))]
-    let _ = child.kill();
+    let _ = crate::process::kill_process_tree(child);
 }
 
 fn push(repo_path: &Path, args: &[&str]) -> Result<()> {
@@ -1602,7 +1620,7 @@ pub fn spawn_branch_publication(
     repo: &str,
 ) -> Result<()> {
     let executable = std::env::current_exe()?;
-    let mut command = Command::new(executable);
+    let mut command = crate::process::command(executable);
     command
         .arg("publish-branch")
         .arg(repo_path)
@@ -1716,7 +1734,7 @@ pub struct CommitInfo {
 /// Like `git` but raw stdout bytes, no trim, and extra tolerated exit codes
 /// (`git diff --no-index` exits 1 when the files differ).
 fn git_bytes(dir: &Path, args: &[&str], ok_codes: &[i32]) -> Result<Vec<u8>> {
-    let mut cmd = Command::new("git");
+    let mut cmd = git_command();
     cmd.current_dir(dir);
     cmd.env("GIT_TERMINAL_PROMPT", "0");
     let out = cmd
@@ -1859,7 +1877,14 @@ pub fn working_tree_diff_against(repo: &Path, base: Option<&str>) -> Result<Diff
         }
         if let Ok(chunk) = git_bytes(
             repo,
-            &["--no-pager", "diff", "--no-index", "--", "/dev/null", f],
+            &[
+                "--no-pager",
+                "diff",
+                "--no-index",
+                "--",
+                crate::process::null_device(),
+                f,
+            ],
             &[1],
         ) {
             bytes.extend_from_slice(&chunk);
@@ -2079,9 +2104,8 @@ pub fn file_exists_at(repo: &Path, sha: &str, path: &str) -> Result<bool> {
 pub fn file_size_at(repo: &Path, sha: &str, path: &str) -> Result<Option<u64>> {
     use std::process::Stdio;
     let spec = format!("{sha}:{path}");
-    let kind = Command::new("git")
+    let kind = git_command()
         .current_dir(repo)
-        .env("GIT_TERMINAL_PROMPT", "0")
         .args(["cat-file", "-t", &spec])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -2090,9 +2114,8 @@ pub fn file_size_at(repo: &Path, sha: &str, path: &str) -> Result<Option<u64>> {
     if !kind.status.success() || kind.stdout != b"blob\n" {
         return Ok(None);
     }
-    let size = Command::new("git")
+    let size = git_command()
         .current_dir(repo)
-        .env("GIT_TERMINAL_PROMPT", "0")
         .args(["cat-file", "-s", &spec])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -2125,9 +2148,8 @@ pub fn file_bytes_at_capped(
     if !file_exists_at(repo, sha, path)? {
         return Ok(None);
     }
-    let mut child = Command::new("git")
+    let mut child = git_command()
         .current_dir(repo)
-        .env("GIT_TERMINAL_PROMPT", "0")
         .args(["cat-file", "blob", &spec])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -2186,7 +2208,7 @@ mod tests {
         assert_eq!(env("GIT_CONFIG_VALUE_0"), Some(OsStr::new("")));
         assert_eq!(
             env("GIT_CONFIG_VALUE_1"),
-            Some(OsStr::new("!gh auth git-credential"))
+            Some(OsStr::new(github_credential_helper().as_str()))
         );
     }
 

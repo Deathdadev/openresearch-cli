@@ -2,7 +2,7 @@
 //! history, and three curated harness-native conversations.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::sync::OnceLock;
 
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
@@ -31,8 +31,18 @@ const LITERATURE_ASSISTANT_MESSAGE_ID: &str = "msg_demo_nanochat_literature_assi
 const OWNER: &str = "openresearch-demo";
 const REPO: &str = "nanochat";
 const BRANCH: &str = "orx/cpu-apple-silicon-end-to-end-baseline";
+// Linux-generated ids kept for regression tests; runtime validation is structural
+// so Windows installs are not rejected for platform-specific commit hashes.
 const BASELINE_SHA: &str = "96098ad3f3708748f693c28194520ae13afb9c69";
 const EXPERIMENT_SHA: &str = "b302007b336e47028e321b0d920f030445c4db67";
+const BASELINE_COMMIT_MESSAGE: &str = "Import nanochat demo baseline";
+const EXPERIMENT_COMMIT_MESSAGE: &str = "Make the CPU pipeline portable and memory-safe";
+const EXPECTED_EXPERIMENT_DIFF: &[&str] = &[
+    ".gitignore",
+    "runs/runcpu.sh",
+    "scripts/chat_cli.py",
+    "scripts/chat_sft.py",
+];
 
 const TURN_CONTEXT: &str = r#"<openresearch-demo-evidence>
 This is a recorded OpenResearch demo run. The project's Artifacts/evidence directory contains real checkpoint metadata, the trained tokenizer, structured training and evaluation metrics, the final inference transcript, and run-manifest.json. To reduce the bundled demo project's download size, the multi-gigabyte model checkpoints, optimizer states, datasets, and environment are intentionally not included; the manifest records their original paths, sizes, hashes, and omission status. Do not search for or claim access to omitted files. Before proposing work that requires model weights, explain that the weights must be regenerated or downloaded. When the user asks you to choose an autonomous follow-up, prefer an analysis supported by the bundled evidence unless they explicitly ask to regenerate or download the weights.
@@ -178,7 +188,7 @@ pub(crate) fn session_start_ref(owner: &str, repo: &str, session_id: &str) -> Op
             session_id,
             SESSION_ID | FIGURE_SESSION_ID | LITERATURE_SESSION_ID
         ))
-    .then_some(EXPERIMENT_SHA)
+    .then_some(BRANCH)
 }
 
 /// Repoint the embedded demo's local origin after the data directory moves.
@@ -490,6 +500,7 @@ fn validate_snapshot(store: &Store, repo: &Path, newly_created: bool) -> Result<
     let experiments = store.list_experiments_by_project(PROJECT_ID)?;
     let runs = store.list_runs_by_project(PROJECT_ID)?;
     let sessions = store.list_chat_sessions_by_project(PROJECT_ID)?;
+    let experiment_sha = git(repo, &["rev-parse", &format!("refs/heads/{BRANCH}")])?;
     if experiments.len() != 1
         || experiments[0].id != EXPERIMENT_ID
         || experiments[0].branch_name != BRANCH
@@ -497,7 +508,7 @@ fn validate_snapshot(store: &Store, repo: &Path, newly_created: bool) -> Result<
         || runs[0].id != RUN_ID
         || runs[0].status != "done"
         || runs[0].exit_code != Some(0)
-        || runs[0].commit_sha.as_deref() != Some(EXPERIMENT_SHA)
+        || runs[0].commit_sha.as_deref() != Some(experiment_sha.as_str())
         || sessions.len() != 3
         || sessions[0].id != SESSION_ID
         || sessions[1].id != FIGURE_SESSION_ID
@@ -1183,6 +1194,12 @@ fn tool_part(
 }
 
 fn install_repository(repo: &Path, bare: &Path) -> Result<String> {
+    if let Some(parent) = repo.parent() {
+        cleanup_stale_demo_tmps(parent);
+    }
+    if let Some(parent) = bare.parent() {
+        cleanup_stale_demo_tmps(parent);
+    }
     if repo.exists() {
         validate_worktree(repo)?;
     } else {
@@ -1215,6 +1232,13 @@ fn build_worktree(root: &Path) -> Result<()> {
     set_executable(root.join("runs/runcpu.sh"))?;
     git(root, &["init", "--object-format=sha1", "-b", "main"])?;
     git(root, &["config", "core.autocrlf", "false"])?;
+    git(root, &["config", "core.safecrlf", "false"])?;
+    #[cfg(windows)]
+    {
+        git(root, &["config", "core.filemode", "false"])?;
+        git(root, &["config", "core.eol", "lf"])?;
+    }
+    #[cfg(not(windows))]
     git(root, &["config", "core.filemode", "true"])?;
     git(root, &["add", "-A"])?;
     commit(root, "Import nanochat demo baseline")?;
@@ -1272,44 +1296,76 @@ fn ensure_local_origin(repo: &Path, bare: &Path) -> Result<()> {
 }
 
 fn validate_bare_origin(bare: &Path) -> Result<()> {
-    let baseline = git(bare, &["rev-parse", "refs/heads/main"]);
-    let experiment = git(bare, &["rev-parse", &format!("refs/heads/{BRANCH}")]);
-    let is_bare = git(bare, &["rev-parse", "--is-bare-repository"]);
-    let head = git(bare, &["symbolic-ref", "HEAD"]);
     if !bare.join("HEAD").is_file()
-        || !matches!(baseline.as_deref(), Ok(value) if value == BASELINE_SHA)
-        || !matches!(experiment.as_deref(), Ok(value) if value == EXPERIMENT_SHA)
-        || !matches!(is_bare.as_deref(), Ok("true"))
-        || !matches!(head.as_deref(), Ok("refs/heads/main"))
+        || git(bare, &["rev-parse", "--is-bare-repository"])? != "true"
+        || git(bare, &["symbolic-ref", "HEAD"])? != "refs/heads/main"
     {
-        return Err(anyhow!(
-            "the reserved demo origin at {} does not contain the expected OpenResearch refs; move it aside and retry onboarding",
-            bare.display()
-        ));
+        return origin_invalid(bare);
+    }
+    validate_demo_refs(bare, origin_invalid)
+}
+
+fn validate_worktree(repo: &Path) -> Result<()> {
+    if !repo.join(".git").is_dir() {
+        return worktree_invalid(repo);
+    }
+    validate_demo_refs(repo, worktree_invalid)
+}
+
+fn validate_demo_refs(repo: &Path, invalid: fn(&Path) -> Result<()>) -> Result<()> {
+    let baseline = git(repo, &["rev-parse", "--verify", "refs/heads/main"])?;
+    let experiment = git(
+        repo,
+        &["rev-parse", "--verify", &format!("refs/heads/{BRANCH}")],
+    )?;
+    let is_bare = git(repo, &["rev-parse", "--is-bare-repository"])? == "true";
+    if !is_bare && !git(repo, &["status", "--porcelain"])?.is_empty() {
+        return invalid(repo);
+    }
+    if git(
+        repo,
+        &["merge-base", "--is-ancestor", &baseline, &experiment],
+    )
+    .is_err()
+    {
+        return invalid(repo);
+    }
+    if git(repo, &["log", "-1", "--format=%s", &baseline])? != BASELINE_COMMIT_MESSAGE {
+        return invalid(repo);
+    }
+    if git(repo, &["log", "-1", "--format=%s", &experiment])? != EXPERIMENT_COMMIT_MESSAGE {
+        return invalid(repo);
+    }
+    let diff_output = git(repo, &["diff", "--name-only", "main", BRANCH])?;
+    let changed: Vec<&str> = diff_output.lines().collect();
+    if changed != EXPECTED_EXPERIMENT_DIFF {
+        return invalid(repo);
     }
     Ok(())
 }
 
-fn validate_worktree(repo: &Path) -> Result<()> {
-    let baseline = git(repo, &["rev-parse", "refs/heads/main"]);
-    let experiment = git(repo, &["rev-parse", &format!("refs/heads/{BRANCH}")]);
-    let clean = git(repo, &["status", "--porcelain"]);
-    let ancestry = git(
-        repo,
-        &["merge-base", "--is-ancestor", BASELINE_SHA, EXPERIMENT_SHA],
-    );
-    if !repo.join(".git").is_dir()
-        || !matches!(baseline.as_deref(), Ok(value) if value == BASELINE_SHA)
-        || !matches!(experiment.as_deref(), Ok(value) if value == EXPERIMENT_SHA)
-        || !matches!(clean.as_deref(), Ok(""))
-        || ancestry.is_err()
-    {
-        return Err(anyhow!(
-            "the reserved demo path at {} already exists but is not the OpenResearch nanochat demo; move it aside and retry onboarding",
-            repo.display()
-        ));
-    }
-    Ok(())
+fn worktree_invalid(repo: &Path) -> Result<()> {
+    Err(anyhow!(
+        "the reserved demo path at {} already exists but is not the OpenResearch nanochat demo; move it aside and retry onboarding",
+        repo.display()
+    ))
+}
+
+fn origin_invalid(bare: &Path) -> Result<()> {
+    Err(anyhow!(
+        "the reserved demo origin at {} does not contain the expected OpenResearch refs; move it aside and retry onboarding",
+        bare.display()
+    ))
+}
+
+fn isolated_git_config_path() -> &'static Path {
+    static PATH: OnceLock<PathBuf> = OnceLock::new();
+    PATH.get_or_init(|| {
+        let path = std::env::temp_dir().join(format!("orx-empty-{}.gitconfig", std::process::id()));
+        std::fs::write(&path, "").ok();
+        path
+    })
+    .as_path()
 }
 
 fn write_assets<T: RustEmbed>(root: &Path) -> Result<()> {
@@ -1325,7 +1381,23 @@ fn write_assets<T: RustEmbed>(root: &Path) -> Result<()> {
     Ok(())
 }
 
+fn cleanup_stale_demo_tmps(parent: &Path) {
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if name.starts_with(".nanochat-demo-") || name.starts_with(".nanochat-demo-origin-") {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
 fn commit(repo: &Path, message: &str) -> Result<()> {
+    let config = isolated_git_config_path().to_string_lossy();
     git(
         repo,
         &[
@@ -1336,7 +1408,7 @@ fn commit(repo: &Path, message: &str) -> Result<()> {
             "-c",
             "commit.gpgsign=false",
             "-c",
-            "core.hooksPath=/dev/null",
+            &format!("core.hooksPath={config}"),
             "commit",
             "-m",
             message,
@@ -1346,7 +1418,9 @@ fn commit(repo: &Path, message: &str) -> Result<()> {
 }
 
 fn git(dir: &Path, args: &[&str]) -> Result<String> {
-    let mut command = Command::new("git");
+    let config = isolated_git_config_path();
+    let config = config.to_string_lossy();
+    let mut command = crate::process::command("git");
     for name in [
         "GIT_DIR",
         "GIT_WORK_TREE",
@@ -1366,16 +1440,16 @@ fn git(dir: &Path, args: &[&str]) -> Result<String> {
         .current_dir(dir)
         .args([
             "-c",
-            "core.attributesFile=/dev/null",
+            &format!("core.attributesFile={config}"),
             "-c",
-            "core.excludesFile=/dev/null",
+            &format!("core.excludesFile={config}"),
             "-c",
-            "core.hooksPath=/dev/null",
+            &format!("core.hooksPath={config}"),
         ])
         .args(args)
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_GLOBAL", config.as_ref())
         .env("GIT_ATTR_NOSYSTEM", "1")
         .env("GIT_AUTHOR_NAME", "OpenResearch Demo")
         .env("GIT_AUTHOR_EMAIL", "demo@openresearch.sh")
@@ -1395,13 +1469,13 @@ fn git(dir: &Path, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
-fn set_executable(path: PathBuf) -> Result<()> {
+fn set_executable(_path: PathBuf) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut permissions = std::fs::metadata(&path)?.permissions();
+        let mut permissions = std::fs::metadata(&_path)?.permissions();
         permissions.set_mode(0o755);
-        std::fs::set_permissions(path, permissions)?;
+        std::fs::set_permissions(_path, permissions)?;
     }
     Ok(())
 }
@@ -1500,10 +1574,7 @@ mod tests {
     #[test]
     fn every_demo_session_recovers_from_the_experiment_commit() {
         for session_id in [SESSION_ID, FIGURE_SESSION_ID, LITERATURE_SESSION_ID] {
-            assert_eq!(
-                session_start_ref(OWNER, REPO, session_id),
-                Some(EXPERIMENT_SHA)
-            );
+            assert_eq!(session_start_ref(OWNER, REPO, session_id), Some(BRANCH));
         }
     }
 
@@ -1806,14 +1877,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(git(&repo, &["branch", "--show-current"]).unwrap(), "main");
-        assert_eq!(
-            git(&repo, &["rev-parse", "refs/heads/main"]).unwrap(),
-            BASELINE_SHA
-        );
-        assert_eq!(
-            git(&repo, &["rev-parse", &format!("refs/heads/{BRANCH}")]).unwrap(),
-            EXPERIMENT_SHA
-        );
+        let baseline_sha = git(&repo, &["rev-parse", "refs/heads/main"]).unwrap();
+        let experiment_sha = git(&repo, &["rev-parse", &format!("refs/heads/{BRANCH}")]).unwrap();
+        assert_eq!(baseline_sha, BASELINE_SHA);
+        assert_eq!(experiment_sha, EXPERIMENT_SHA);
         for session_id in [SESSION_ID, FIGURE_SESSION_ID, LITERATURE_SESSION_ID] {
             let worktree = worktrees.join(session_id);
             crate::local::git::ensure_session_worktree_in(
@@ -1822,7 +1889,7 @@ mod tests {
             .unwrap();
             assert_eq!(
                 git(&worktree, &["rev-parse", "HEAD"]).unwrap(),
-                EXPERIMENT_SHA
+                experiment_sha
             );
         }
         drop(store);

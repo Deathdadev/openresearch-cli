@@ -70,18 +70,21 @@ pub fn run_job(spec: &LocalJobSpec) -> Result<PathBuf> {
         let _ = std::fs::set_permissions(&run_sh_path, std::fs::Permissions::from_mode(0o600));
     }
 
-    let mut cmd = std::process::Command::new("bash");
+    let bash = crate::process::find_bash().ok_or_else(|| {
+        anyhow!(
+            "Local runs need bash. Install Git for Windows (https://git-scm.com/download/win) \
+             or add bash to your PATH."
+        )
+    })?;
+
+    let mut cmd = crate::process::command(&bash);
     cmd.arg("run.sh")
         .envs(&spec.secret_env)
         .current_dir(&dir)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        cmd.process_group(0);
-    }
+    crate::process::configure_detached(&mut cmd);
     let child = cmd
         .spawn()
         .map_err(|e| anyhow!("Could not launch the local run: {}", e))?;
@@ -90,22 +93,9 @@ pub fn run_job(spec: &LocalJobSpec) -> Result<PathBuf> {
     Ok(dir)
 }
 
-/// Is the recorded process still alive? `ps` rather than `kill -0`: a zombie
-/// (dead but not yet reaped by a still-living spawner) answers `kill -0` yet
-/// is not running. No libc dependency; works on macOS and Linux.
+/// Is the recorded process still alive?
 fn pid_alive(pid: &str) -> bool {
-    match std::process::Command::new("ps")
-        .args(["-o", "stat=", "-p", pid])
-        .stderr(std::process::Stdio::null())
-        .output()
-    {
-        Ok(o) if o.status.success() => {
-            let stat = String::from_utf8_lossy(&o.stdout);
-            let stat = stat.trim();
-            !stat.is_empty() && !stat.starts_with('Z')
-        }
-        _ => false,
-    }
+    crate::process::pid_alive(pid)
 }
 
 /// The terminal state recorded in exit_code, if any. An empty file is run.sh
@@ -194,25 +184,9 @@ pub fn stream_logs(dir: &Path, skip: u64, sink: &mut (dyn FnMut(&str) + Send)) -
 pub fn cancel_job(dir: &Path) -> Result<()> {
     let pid = std::fs::read_to_string(dir.join("pid"))
         .map_err(|e| anyhow!("Could not read the run's pid: {}", e))?;
-    let pid = pid.trim().to_string();
-    let group = std::process::Command::new("kill")
-        .args(["-TERM", "--", &format!("-{pid}")])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
-    if !group {
-        let process = std::process::Command::new("kill")
-            .args(["-TERM", &pid])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map(|status| status.success())
-            .unwrap_or(false);
-        if !process {
-            return Err(anyhow!("Could not terminate local process group {pid}"));
-        }
+    let pid = pid.trim();
+    if !crate::process::terminate_tree(pid) {
+        return Err(anyhow!("Could not terminate local process group {pid}"));
     }
     Ok(())
 }
@@ -247,7 +221,8 @@ pub struct Gpu {
 /// Blocking (subprocesses); call via `spawn_blocking` from async handlers.
 pub fn hardware_info() -> LocalHardware {
     let cmd = |name: &str, args: &[&str]| -> Option<String> {
-        let out = std::process::Command::new(name).args(args).output().ok()?;
+        let mut command = crate::process::command(name);
+        let out = command.args(args).output().ok()?;
         out.status
             .success()
             .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
@@ -255,11 +230,20 @@ pub fn hardware_info() -> LocalHardware {
     };
     let mem_bytes = if cfg!(target_os = "macos") {
         cmd("sysctl", &["-n", "hw.memsize"]).and_then(|s| s.parse().ok())
+    } else if cfg!(windows) {
+        cmd(
+            "powershell",
+            &[
+                "-NoProfile",
+                "-Command",
+                "(Get-CimInstance Win32_OperatingSystem).TotalVisibleMemorySize * 1024",
+            ],
+        )
+        .and_then(|s| s.trim().parse().ok())
     } else {
         std::fs::read_to_string("/proc/meminfo")
             .ok()
             .and_then(|raw| {
-                // "MemTotal:       32763528 kB"
                 raw.lines()
                     .find(|l| l.starts_with("MemTotal:"))?
                     .split_whitespace()

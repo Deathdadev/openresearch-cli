@@ -96,21 +96,29 @@ pub fn install(force: bool) -> Result<Installed> {
         Err(_) => {}
     }
 
-    std::os::unix::fs::symlink(&target, &link).map_err(|e| {
-        anyhow!(
-            "Could not link {} -> {}: {}",
-            link.display(),
-            target.display(),
-            e
-        )
-    })?;
-
-    Ok(Installed {
-        on_path: dir_on_path(&dir),
-        link,
-        target,
-        already_current: false,
-    })
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(&target, &link).map_err(|e| {
+            anyhow!(
+                "Could not link {} -> {}: {}",
+                link.display(),
+                target.display(),
+                e
+            )
+        })?;
+        Ok(Installed {
+            on_path: dir_on_path(&dir),
+            link,
+            target,
+            already_current: false,
+        })
+    }
+    #[cfg(not(unix))]
+    {
+        Err(anyhow!(
+            "`orx install-cli` links the macOS app's binary onto your PATH and is not supported on this platform."
+        ))
+    }
 }
 
 pub async fn run(args: crate::InstallCliArgs) -> Result<()> {

@@ -1,6 +1,7 @@
 //! Native folder selection for the loopback dashboard.
 
 use std::path::PathBuf;
+#[cfg(target_os = "macos")]
 use std::process::Command;
 
 use crate::error::{anyhow, Result};
@@ -28,8 +29,9 @@ pub fn pick_folder() -> Result<Option<PathBuf>> {
 #[cfg(target_os = "windows")]
 pub fn pick_folder() -> Result<Option<PathBuf>> {
     let script = r#"Add-Type -AssemblyName System.Windows.Forms; $dialog = New-Object System.Windows.Forms.FolderBrowserDialog; $dialog.Description = 'Choose a project folder'; if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dialog.SelectedPath }"#;
-    let output = Command::new("powershell.exe")
-        .args(["-NoProfile", "-Command", script])
+    let mut command = crate::process::command("powershell.exe");
+    command.args(["-NoProfile", "-Command", script]);
+    let output = command
         .output()
         .map_err(|error| anyhow!("Could not open the folder picker: {error}"))?;
     if !output.status.success() {
@@ -63,7 +65,8 @@ pub fn pick_folder() -> Result<Option<PathBuf>> {
             ][..],
         ),
     ] {
-        let output = match Command::new(program).args(args).output() {
+        let mut cmd = crate::process::command(program);
+        let output = match cmd.args(args).output() {
             Ok(output) => output,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
             Err(error) => return Err(anyhow!("Could not open the folder picker: {error}")),

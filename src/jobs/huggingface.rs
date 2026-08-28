@@ -65,7 +65,7 @@ async fn ensure_client_env() -> Result<PathBuf> {
         .await;
     let python = managed_python();
     if python.exists() {
-        let ready = tokio::process::Command::new(&python)
+        let ready = crate::process::tokio_command(&python)
             .args([
                 "-c",
                 "from huggingface_hub import HfApi; assert hasattr(HfApi, 'sync_job_volume')",
@@ -84,7 +84,7 @@ async fn ensure_client_env() -> Result<PathBuf> {
     let base = ["python3", "python"]
         .into_iter()
         .find(|candidate| {
-            std::process::Command::new(candidate)
+            crate::process::command(candidate)
                 .args(["-c", "import venv"])
                 .status()
                 .map(|status| status.success())
@@ -99,7 +99,7 @@ async fn ensure_client_env() -> Result<PathBuf> {
         if let Some(parent) = env_dir.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let status = tokio::process::Command::new(base)
+        let status = crate::process::tokio_command(base)
             .args(["-m", "venv"])
             .arg(env_dir)
             .status()
@@ -111,7 +111,7 @@ async fn ensure_client_env() -> Result<PathBuf> {
         }
     }
     eprintln!("orx: installing the Hugging Face source-transfer client (one time)…");
-    let status = tokio::process::Command::new(&python)
+    let status = crate::process::tokio_command(&python)
         .args([
             "-m",
             "pip",
@@ -333,7 +333,7 @@ pub async fn run_job_with_source(
         "timeoutSeconds": spec.timeout_seconds,
         "labels": spec.labels,
     });
-    let mut child = tokio::process::Command::new(python)
+    let mut child = crate::process::tokio_command(python)
         .args(["-c", SOURCE_LAUNCHER])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
