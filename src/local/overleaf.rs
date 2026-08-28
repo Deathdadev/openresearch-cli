@@ -464,6 +464,7 @@ const CREDENTIAL_HELPER: &str = "!f() { host=; while IFS='=' read key value; do 
 /// the configuration git carries into `git-remote-https`.
 fn git(dir: Option<&Path>, auth: Option<Auth>, args: &[&str]) -> Result<Output> {
     let mut command = Command::new("git");
+    crate::process::hide_window(&mut command);
     if let Some(dir) = dir {
         command.current_dir(dir);
     }

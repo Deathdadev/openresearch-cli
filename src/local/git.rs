@@ -147,12 +147,18 @@ pub fn existing_session_worktree_path(
     }
 }
 
+fn git_command() -> Command {
+    let mut cmd = Command::new("git");
+    crate::process::hide_window(&mut cmd);
+    cmd.env("GIT_TERMINAL_PROMPT", "0");
+    cmd
+}
+
 /// Run git with `args`, returning trimmed stdout; failures carry git's stderr.
 /// Headless: git must fail fast rather than prompt on /dev/tty (these calls
 /// run under a server, where a prompt would hang a worker forever).
 fn git(dir: Option<&Path>, args: &[&str]) -> Result<String> {
-    let mut cmd = Command::new("git");
-    crate::process::hide_window(&mut cmd);
+    let mut cmd = git_command();
     if let Some(dir) = dir {
         cmd.current_dir(dir);
     }
@@ -257,7 +263,7 @@ fn git_context_bytes(
     index_file: &Path,
     args: &[&str],
 ) -> Result<Vec<u8>> {
-    let out = Command::new("git")
+    let out = git_command()
         .current_dir(work_tree)
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_DIR", git_dir)
@@ -606,7 +612,7 @@ fn stage_initial_snapshot(path: &Path, included_paths: &[Vec<u8>]) -> Result<()>
         return Ok(());
     }
 
-    let mut child = Command::new("git")
+    let mut child = git_command()
         .current_dir(path)
         .env("GIT_TERMINAL_PROMPT", "0")
         .args(["add", "-f", "--pathspec-from-file=-", "--pathspec-file-nul"])
@@ -639,7 +645,7 @@ fn stage_initial_snapshot(path: &Path, included_paths: &[Vec<u8>]) -> Result<()>
 
 fn remove_excluded_paths_from_index(path: &Path, excluded_paths: &[Vec<u8>]) -> Result<()> {
     for paths in excluded_paths.chunks(128) {
-        let mut command = Command::new("git");
+        let mut command = git_command();
         command
             .current_dir(path)
             .env("GIT_TERMINAL_PROMPT", "0")
@@ -809,7 +815,7 @@ pub fn clone_public(url: &str, path: &Path, shallow: bool) -> Result<()> {
         .write(true)
         .create_new(true)
         .open(&empty_config)?;
-    let mut command = Command::new("git");
+    let mut command = git_command();
     command
         .current_dir(std::env::temp_dir())
         .env("GIT_TERMINAL_PROMPT", "0")
@@ -1453,7 +1459,7 @@ fn redact_remote_urls(text: &str) -> String {
 }
 
 fn authenticated_git_command(repo_path: &Path) -> Command {
-    let mut command = Command::new("git");
+    let mut command = git_command();
     command
         .current_dir(repo_path)
         .env("GH_HOST", "github.com")
@@ -1723,7 +1729,7 @@ pub struct CommitInfo {
 /// Like `git` but raw stdout bytes, no trim, and extra tolerated exit codes
 /// (`git diff --no-index` exits 1 when the files differ).
 fn git_bytes(dir: &Path, args: &[&str], ok_codes: &[i32]) -> Result<Vec<u8>> {
-    let mut cmd = Command::new("git");
+    let mut cmd = git_command();
     cmd.current_dir(dir);
     cmd.env("GIT_TERMINAL_PROMPT", "0");
     let out = cmd
@@ -2093,9 +2099,8 @@ pub fn file_exists_at(repo: &Path, sha: &str, path: &str) -> Result<bool> {
 pub fn file_size_at(repo: &Path, sha: &str, path: &str) -> Result<Option<u64>> {
     use std::process::Stdio;
     let spec = format!("{sha}:{path}");
-    let kind = Command::new("git")
+    let kind = git_command()
         .current_dir(repo)
-        .env("GIT_TERMINAL_PROMPT", "0")
         .args(["cat-file", "-t", &spec])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -2104,9 +2109,8 @@ pub fn file_size_at(repo: &Path, sha: &str, path: &str) -> Result<Option<u64>> {
     if !kind.status.success() || kind.stdout != b"blob\n" {
         return Ok(None);
     }
-    let size = Command::new("git")
+    let size = git_command()
         .current_dir(repo)
-        .env("GIT_TERMINAL_PROMPT", "0")
         .args(["cat-file", "-s", &spec])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -2139,9 +2143,8 @@ pub fn file_bytes_at_capped(
     if !file_exists_at(repo, sha, path)? {
         return Ok(None);
     }
-    let mut child = Command::new("git")
+    let mut child = git_command()
         .current_dir(repo)
-        .env("GIT_TERMINAL_PROMPT", "0")
         .args(["cat-file", "blob", &spec])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())

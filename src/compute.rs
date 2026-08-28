@@ -129,7 +129,9 @@ fn archive(repo: &Path, revision: &str, format: &str, destination: &Path) -> Res
     #[cfg(unix)]
     options.mode(0o600);
     let file = options.open(destination)?;
-    let output = Command::new("git")
+    let mut cmd = Command::new("git");
+    crate::process::hide_window(&mut cmd);
+    let output = cmd
         .current_dir(repo)
         .args(["archive", &format!("--format={format}"), revision])
         .stdout(Stdio::from(file))
