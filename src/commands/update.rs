@@ -158,7 +158,7 @@ async fn apply(args: crate::UpdateArgs) -> Result<Outcome> {
         let script =
             std::env::temp_dir().join(format!("orx-installer-{}.ps1", uuid::Uuid::new_v4()));
         std::fs::write(&script, &installer)?;
-        let mut cmd = std::process::Command::new("powershell");
+        let mut cmd = crate::process::command("powershell");
         cmd.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
             .arg(&script)
             .env("CARGO_DIST_FORCE_INSTALL_DIR", &receipt.install_prefix);

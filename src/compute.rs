@@ -7,7 +7,7 @@
 
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 #[cfg(unix)]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
@@ -129,8 +129,7 @@ fn archive(repo: &Path, revision: &str, format: &str, destination: &Path) -> Res
     #[cfg(unix)]
     options.mode(0o600);
     let file = options.open(destination)?;
-    let mut cmd = Command::new("git");
-    crate::process::hide_window(&mut cmd);
+    let mut cmd = crate::process::command("git");
     let output = cmd
         .current_dir(repo)
         .args(["archive", &format!("--format={format}"), revision])

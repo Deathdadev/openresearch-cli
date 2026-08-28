@@ -2,7 +2,6 @@
 //! history, and three curated harness-native conversations.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::OnceLock;
 
 use rust_embed::RustEmbed;
@@ -1421,8 +1420,7 @@ fn commit(repo: &Path, message: &str) -> Result<()> {
 fn git(dir: &Path, args: &[&str]) -> Result<String> {
     let config = isolated_git_config_path();
     let config = config.to_string_lossy();
-    let mut command = Command::new("git");
-    crate::process::hide_window(&mut command);
+    let mut command = crate::process::command("git");
     for name in [
         "GIT_DIR",
         "GIT_WORK_TREE",

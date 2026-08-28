@@ -3059,13 +3059,16 @@ async fn start_thread(ctx: &mut TurnCtx, client: &CodexClient, params: Value) ->
 /// clone and worktree). Canonicalized because codex requires absolute roots
 /// and seatbelt matches real paths (`/var` vs `/private/var`).
 async fn shared_git_dir(workspace: &Path) -> Option<PathBuf> {
-    let out = Command::new("git")
-        .args(["rev-parse", "--git-common-dir"])
-        .current_dir(workspace)
-        .stdin(Stdio::null())
-        .output()
-        .await
-        .ok()?;
+    let out = {
+        let mut cmd = tokio::process::Command::new("git");
+        crate::process::hide_tokio_window(&mut cmd);
+        cmd.args(["rev-parse", "--git-common-dir"])
+            .current_dir(workspace)
+            .stdin(Stdio::null())
+            .output()
+            .await
+            .ok()?
+    };
     if !out.status.success() {
         return None;
     }

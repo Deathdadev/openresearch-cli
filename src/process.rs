@@ -1,7 +1,22 @@
 //! Cross-platform process helpers — Windows equivalents for Unix process groups,
 //! `/dev/null`, and `ps`/`kill` patterns used by local jobs and git.
 
+use std::ffi::OsStr;
 use std::process::{Command, Stdio};
+
+/// Build a [`Command`] with Windows `CREATE_NO_WINDOW` already applied.
+pub fn command(program: impl AsRef<OsStr>) -> Command {
+    let mut cmd = Command::new(program);
+    hide_window(&mut cmd);
+    cmd
+}
+
+/// Build a [`tokio::process::Command`] with Windows `CREATE_NO_WINDOW` already applied.
+pub fn tokio_command(program: impl AsRef<OsStr>) -> tokio::process::Command {
+    let mut cmd = tokio::process::Command::new(program);
+    hide_tokio_window(&mut cmd);
+    cmd
+}
 
 /// Spawn a child without flashing a console window on Windows. No-op elsewhere.
 pub fn hide_window(cmd: &mut Command) {

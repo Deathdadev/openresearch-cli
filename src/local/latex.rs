@@ -149,8 +149,8 @@ fn tex_command(binary: &str) -> Command {
     // biber is never probed — it is chosen from what a pass wrote — so a bare
     // name here is what makes a machine without it fail as ENOENT at spawn.
     let mut command = match find_on_path(binary) {
-        Some(path) => Command::new(path),
-        None => Command::new(binary),
+        Some(path) => crate::process::command(path),
+        None => crate::process::command(binary),
     };
     if let Some(paths) = search_path() {
         command.env("PATH", paths);

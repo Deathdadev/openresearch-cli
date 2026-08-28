@@ -3941,8 +3941,7 @@ fn reject_if_moving(state: &AppState) -> std::result::Result<(), ApiError> {
 // --- git settings -----------------------------------------------------------
 
 fn git_out(args: &[&str]) -> Option<String> {
-    let mut cmd = std::process::Command::new("git");
-    crate::process::hide_window(&mut cmd);
+    let mut cmd = crate::process::command("git");
     let out = cmd.args(args).output().ok()?;
     if !out.status.success() {
         return None;
@@ -4022,8 +4021,7 @@ async fn set_git_settings(Json(req): Json<SetGitSettingsReq>) -> ApiResult {
     tokio::task::spawn_blocking(move || {
         for (key, value) in [("user.name", name), ("user.email", email)] {
             if let Some(v) = value.filter(|v| !v.is_empty()) {
-                let mut cmd = std::process::Command::new("git");
-                crate::process::hide_window(&mut cmd);
+                let mut cmd = crate::process::command("git");
                 let ok = cmd
                     .args(["config", "--global", key, &v])
                     .status()

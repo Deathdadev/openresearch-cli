@@ -148,8 +148,7 @@ pub fn existing_session_worktree_path(
 }
 
 fn git_command() -> Command {
-    let mut cmd = Command::new("git");
-    crate::process::hide_window(&mut cmd);
+    let mut cmd = crate::process::command("git");
     cmd.env("GIT_TERMINAL_PROMPT", "0");
     cmd
 }
@@ -1615,7 +1614,7 @@ pub fn spawn_branch_publication(
     repo: &str,
 ) -> Result<()> {
     let executable = std::env::current_exe()?;
-    let mut command = Command::new(executable);
+    let mut command = crate::process::command(executable);
     command
         .arg("publish-branch")
         .arg(repo_path)
