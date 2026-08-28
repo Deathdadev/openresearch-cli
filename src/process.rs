@@ -19,7 +19,6 @@ pub fn hide_window(cmd: &mut Command) {
 pub fn hide_tokio_window(cmd: &mut tokio::process::Command) {
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
@@ -116,9 +115,7 @@ pub fn terminate_tree(pid: &str) -> bool {
             .stdout(Stdio::null())
             .stderr(Stdio::null());
         hide_window(&mut cmd);
-        cmd.status()
-            .map(|s| s.success())
-            .unwrap_or(false)
+        cmd.status().map(|s| s.success()).unwrap_or(false)
     }
 }
 
