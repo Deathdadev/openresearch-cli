@@ -1073,6 +1073,8 @@ impl ClaudeHost {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
     use tokio::process::Command;
 
     #[cfg(unix)]
