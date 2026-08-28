@@ -187,11 +187,7 @@ pub(crate) async fn hydrate_shell_env() {
 
 #[cfg(windows)]
 fn focus_or_open(url: &str) {
-    if crate::commands::up::has_live_dashboard_clients() {
-        crate::browser::open_browser(url);
-    } else {
-        crate::browser::open_browser(url);
-    }
+    crate::browser::open_browser(url);
 }
 
 #[cfg(windows)]

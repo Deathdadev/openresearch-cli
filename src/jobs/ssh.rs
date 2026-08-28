@@ -134,12 +134,6 @@ impl SshTarget {
 /// Shared ssh options: BatchMode (never hang on a prompt) + connection
 /// multiplexing so repeated polls are cheap.
 fn ssh_opts(target: &SshTarget) -> Vec<String> {
-    // A 16-hex hash leaves room for ssh's temporary bind suffix. It folds in
-    // the extra opts so different ports never share a control socket.
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    target.dest.hash(&mut h);
-    target.extra_opts.hash(&mut h);
     let mut opts = vec![
         "-o".into(),
         "BatchMode=yes".into(),
@@ -148,6 +142,12 @@ fn ssh_opts(target: &SshTarget) -> Vec<String> {
     ];
     #[cfg(not(windows))]
     {
+        // A 16-hex hash leaves room for ssh's temporary bind suffix. It folds in
+        // the extra opts so different ports never share a control socket.
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        target.dest.hash(&mut h);
+        target.extra_opts.hash(&mut h);
         let cp = control_dir().join(format!("{:016x}", h.finish()));
         opts.extend([
             "-o".into(),

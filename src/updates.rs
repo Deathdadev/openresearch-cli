@@ -165,7 +165,7 @@ pub fn receipt_path() -> PathBuf {
         let base = dirs::data_local_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join(APP_NAME);
-        return base.join(format!("{}-receipt.json", APP_NAME));
+        base.join(format!("{}-receipt.json", APP_NAME))
     }
     #[cfg(not(windows))]
     {
