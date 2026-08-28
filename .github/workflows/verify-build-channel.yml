@@ -34,20 +34,28 @@ jobs:
           while IFS= read -r -d '' archive; do
             extract_dir="extracted/$verified"
             mkdir -p "$extract_dir"
-            tar -xf "$archive" -C "$extract_dir"
-            binary="$(find "$extract_dir" -type f -name orx -print -quit)"
+            case "$archive" in
+              *.zip)
+                unzip -q "$archive" -d "$extract_dir"
+                binary="$(find "$extract_dir" -type f \( -name orx -o -name orx.exe \) -print -quit)"
+                ;;
+              *)
+                tar -xf "$archive" -C "$extract_dir"
+                binary="$(find "$extract_dir" -type f -name orx -print -quit)"
+                ;;
+            esac
             if [[ -z "$binary" ]]; then
               echo "::error::No orx binary found in '$archive'"
               exit 1
             fi
-            chmod +x "$binary"
+            chmod +x "$binary" 2>/dev/null || true
             actual="$("$binary" --no-telemetry version --build-channel)"
             if [[ "$actual" != "$EXPECTED_BUILD_CHANNEL" ]]; then
               echo "::error::Expected build channel '$EXPECTED_BUILD_CHANNEL', got '$actual' in '$archive'"
               exit 1
             fi
             verified=$((verified + 1))
-          done < <(find artifacts -type f \( -name '*.tar.xz' -o -name '*.tar.gz' \) -print0)
+          done < <(find artifacts -type f \( -name '*.tar.xz' -o -name '*.tar.gz' -o -name '*.zip' \) -print0)
           expected="$(jq 'length' <<< "$TARGETS_JSON")"
           if (( verified != expected )); then
             echo "::error::Expected $expected packaged archive(s), verified $verified"

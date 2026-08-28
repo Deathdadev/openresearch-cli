@@ -93,9 +93,30 @@ async fn apply(args: crate::UpdateArgs) -> Result<Outcome> {
 
     let receipt = match target {
         UpdateTarget::AppBundle(root) => {
-            return updates::macos_app::update(&root, &current, args.dry_run, args.background)
+            #[cfg(target_os = "macos")]
+            {
+                return updates::macos_app::update(&root, &current, args.dry_run, args.background)
+                    .await
+                    .map(|_| Outcome::Done);
+            }
+            #[cfg(windows)]
+            {
+                return updates::windows_app::update(
+                    &root,
+                    &current,
+                    args.dry_run,
+                    args.background,
+                )
                 .await
-                .map(|_| Outcome::Done)
+                .map(|_| Outcome::Done);
+            }
+            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+            {
+                let _ = (root, current, args.dry_run, args.background);
+                return Err(anyhow!(
+                    "Desktop app updates are not supported on this platform."
+                ));
+            }
         }
         UpdateTarget::Installer(receipt) => receipt,
     };
@@ -126,39 +147,73 @@ async fn apply(args: crate::UpdateArgs) -> Result<Outcome> {
 
     // Pin the installer to the same release the manifest described, so the
     // version we report is exactly the version that gets installed.
-    let installer = updates::fetch_release_asset(
-        &latest.tag,
-        &format!("{}-installer.sh", updates::APP_NAME),
-        Duration::from_secs(60),
-    )
-    .await?;
-    let script = std::env::temp_dir().join(format!("orx-installer-{}.sh", uuid::Uuid::new_v4()));
-    std::fs::write(&script, &installer)?;
+    #[cfg(windows)]
+    {
+        let installer = updates::fetch_release_asset(
+            &latest.tag,
+            &format!("{}-installer.ps1", updates::APP_NAME),
+            Duration::from_secs(60),
+        )
+        .await?;
+        let script =
+            std::env::temp_dir().join(format!("orx-installer-{}.ps1", uuid::Uuid::new_v4()));
+        std::fs::write(&script, &installer)?;
+        let mut cmd = std::process::Command::new("powershell");
+        cmd.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
+            .arg(&script)
+            .env("CARGO_DIST_FORCE_INSTALL_DIR", &receipt.install_prefix);
+        if !receipt.modify_path {
+            cmd.env("OPENRESEARCH_CLI_NO_MODIFY_PATH", "1");
+        }
+        if args.background {
+            cmd.stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null());
+        }
+        let status = cmd.status();
+        let _ = std::fs::remove_file(&script);
+        let status = status.map_err(|e| anyhow!("Could not run the installer: {}", e))?;
+        if !status.success() {
+            return Err(anyhow!(
+                "The installer exited with {}. The previous orx is untouched.",
+                status
+            ));
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let installer = updates::fetch_release_asset(
+            &latest.tag,
+            &format!("{}-installer.sh", updates::APP_NAME),
+            Duration::from_secs(60),
+        )
+        .await?;
+        let script =
+            std::env::temp_dir().join(format!("orx-installer-{}.sh", uuid::Uuid::new_v4()));
+        std::fs::write(&script, &installer)?;
 
-    // `sh <script>` rather than executing the file: immune to noexec /tmp
-    // mounts. The installer verifies artifact checksums and renames the new
-    // binary into place atomically; replacing a running orx is safe on
-    // macOS/Linux (old processes keep the old inode).
-    let mut cmd = std::process::Command::new("sh");
-    cmd.arg(&script)
-        .env("CARGO_DIST_FORCE_INSTALL_DIR", &receipt.install_prefix);
-    if !receipt.modify_path {
-        cmd.env("OPENRESEARCH_CLI_NO_MODIFY_PATH", "1");
-    }
-    if args.background {
-        // Nobody is watching this child, and its stdio is inherited from a
-        // terminal the user is still using.
-        cmd.stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null());
-    }
-    let status = cmd.status();
-    let _ = std::fs::remove_file(&script);
-    let status = status.map_err(|e| anyhow!("Could not run the installer: {}", e))?;
-    if !status.success() {
-        return Err(anyhow!(
-            "The installer exited with {}. The previous orx is untouched.",
-            status
-        ));
+        // `sh <script>` rather than executing the file: immune to noexec /tmp
+        // mounts. The installer verifies artifact checksums and renames the new
+        // binary into place atomically; replacing a running orx is safe on
+        // macOS/Linux (old processes keep the old inode).
+        let mut cmd = std::process::Command::new("sh");
+        cmd.arg(&script)
+            .env("CARGO_DIST_FORCE_INSTALL_DIR", &receipt.install_prefix);
+        if !receipt.modify_path {
+            cmd.env("OPENRESEARCH_CLI_NO_MODIFY_PATH", "1");
+        }
+        if args.background {
+            cmd.stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null());
+        }
+        let status = cmd.status();
+        let _ = std::fs::remove_file(&script);
+        let status = status.map_err(|e| anyhow!("Could not run the installer: {}", e))?;
+        if !status.success() {
+            return Err(anyhow!(
+                "The installer exited with {}. The previous orx is untouched.",
+                status
+            ));
+        }
     }
 
     // Keep the update-check cache in sync so the warning doesn't fire on a stale

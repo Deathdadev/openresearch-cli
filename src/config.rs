@@ -64,12 +64,24 @@ pub struct Credentials {
 pub(crate) fn config_dir() -> PathBuf {
     let base = crate::local::shell_env::var("XDG_CONFIG_HOME")
         .map(PathBuf::from)
+        .or_else(default_config_base)
         .unwrap_or_else(|| {
             dirs::home_dir()
                 .unwrap_or_else(|| PathBuf::from("."))
                 .join(".config")
         });
     base.join("openresearch")
+}
+
+fn default_config_base() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        dirs::config_dir()
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
 }
 
 fn credentials_path() -> PathBuf {

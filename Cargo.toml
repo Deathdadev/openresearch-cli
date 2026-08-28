@@ -42,6 +42,9 @@ futures = "0.3"
 async-trait = "0.1"
 sha2 = "0.10"
 
+[target.'cfg(windows)'.dependencies]
+tray-icon = "0.19"
+
 [target.'cfg(unix)'.dependencies]
 # Free-space pre-check for the data-dir move (statvfs). Already in the tree
 # transitively; taken as a direct dep only on unix, where we call it.

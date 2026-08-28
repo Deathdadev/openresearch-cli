@@ -140,19 +140,24 @@ fn ssh_opts(target: &SshTarget) -> Vec<String> {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     target.dest.hash(&mut h);
     target.extra_opts.hash(&mut h);
-    let cp = control_dir().join(format!("{:016x}", h.finish()));
     let mut opts = vec![
         "-o".into(),
         "BatchMode=yes".into(),
         "-o".into(),
         "ConnectTimeout=10".into(),
-        "-o".into(),
-        "ControlMaster=auto".into(),
-        "-o".into(),
-        format!("ControlPath={}", cp.display()),
-        "-o".into(),
-        "ControlPersist=60".into(),
     ];
+    #[cfg(not(windows))]
+    {
+        let cp = control_dir().join(format!("{:016x}", h.finish()));
+        opts.extend([
+            "-o".into(),
+            "ControlMaster=auto".into(),
+            "-o".into(),
+            format!("ControlPath={}", cp.display()),
+            "-o".into(),
+            "ControlPersist=60".into(),
+        ]);
+    }
     opts.extend(target.extra_opts.iter().cloned());
     opts
 }

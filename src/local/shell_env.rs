@@ -64,8 +64,44 @@ fn search_in(paths: &OsStr, binary: &str) -> Option<PathBuf> {
     // pick up a binary.
     std::env::split_paths(paths)
         .filter(|dir| dir.is_absolute())
-        .map(|dir| dir.join(binary))
+        .flat_map(|dir| {
+            candidate_names(binary)
+                .into_iter()
+                .map(move |name| dir.join(name))
+        })
         .find(|candidate| candidate.is_file())
+}
+
+/// Names to probe for a command. On Windows, PATHEXT extends bare names with
+/// `.exe`, `.cmd`, etc.
+fn candidate_names(binary: &str) -> Vec<String> {
+    #[cfg(not(windows))]
+    return vec![binary.to_string()];
+    #[cfg(windows)]
+    {
+        let mut names = vec![binary.to_string()];
+        if !binary.contains('.') {
+            let mut seen = std::collections::HashSet::new();
+            seen.insert(binary.to_string());
+            if let Ok(exts) = std::env::var("PATHEXT") {
+                for ext in exts.split(';') {
+                    let ext = ext.trim().trim_start_matches('.');
+                    if ext.is_empty() {
+                        continue;
+                    }
+                    let candidate = format!("{binary}.{ext}");
+                    if seen.insert(candidate.clone()) {
+                        names.push(candidate);
+                    }
+                }
+            }
+            let exe = format!("{binary}.exe");
+            if seen.insert(exe.clone()) {
+                names.push(exe);
+            }
+        }
+        names
+    }
 }
 
 /// Hand the imported variables to a child process. Every `orx` child re-resolves
@@ -89,7 +125,7 @@ pub fn export_to(mut set: impl FnMut(&'static str, &OsString)) {
 /// Install the probe's answer; the first call wins. Deliberately not
 /// `env::set_var` — app mode enters inside an already-running tokio runtime,
 /// where mutating the process environment races every live thread.
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub fn set(vars: HashMap<&'static str, OsString>) {
     let _ = OVERRIDE.set(vars);
 }

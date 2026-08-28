@@ -96,6 +96,7 @@ pub fn install(force: bool) -> Result<Installed> {
         Err(_) => {}
     }
 
+    #[cfg(unix)]
     std::os::unix::fs::symlink(&target, &link).map_err(|e| {
         anyhow!(
             "Could not link {} -> {}: {}",
@@ -104,6 +105,10 @@ pub fn install(force: bool) -> Result<Installed> {
             e
         )
     })?;
+    #[cfg(not(unix))]
+    return Err(anyhow!(
+        "`orx install-cli` links the macOS app's binary onto your PATH and is not supported on this platform."
+    ));
 
     Ok(Installed {
         on_path: dir_on_path(&dir),
