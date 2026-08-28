@@ -1,7 +1,7 @@
 //! Native folder selection for the loopback dashboard.
 
 use std::path::PathBuf;
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 use std::process::Command;
 
 use crate::error::{anyhow, Result};
