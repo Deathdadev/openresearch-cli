@@ -152,6 +152,7 @@ pub fn existing_session_worktree_path(
 /// run under a server, where a prompt would hang a worker forever).
 fn git(dir: Option<&Path>, args: &[&str]) -> Result<String> {
     let mut cmd = Command::new("git");
+    crate::process::hide_window(&mut cmd);
     if let Some(dir) = dir {
         cmd.current_dir(dir);
     }

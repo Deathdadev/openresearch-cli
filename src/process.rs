@@ -3,6 +3,30 @@
 
 use std::process::{Command, Stdio};
 
+/// Spawn a child without flashing a console window on Windows. No-op elsewhere.
+pub fn hide_window(cmd: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    let _ = &mut *cmd;
+}
+
+/// [`hide_window`] for [`tokio::process::Command`].
+pub fn hide_tokio_window(cmd: &mut tokio::process::Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    let _ = &mut *cmd;
+}
+
 /// The platform null device (`/dev/null` or `NUL`).
 pub fn null_device() -> &'static str {
     if cfg!(windows) {
@@ -47,10 +71,11 @@ pub fn pid_alive(pid: &str) -> bool {
     }
     #[cfg(windows)]
     {
-        Command::new("tasklist")
-            .args(["/FI", &format!("PID eq {pid}"), "/NH"])
-            .stderr(Stdio::null())
-            .output()
+        let mut cmd = Command::new("tasklist");
+        cmd.args(["/FI", &format!("PID eq {pid}"), "/NH"])
+            .stderr(Stdio::null());
+        hide_window(&mut cmd);
+        cmd.output()
             .ok()
             .filter(|o| o.status.success())
             .map(|o| {
@@ -86,11 +111,12 @@ pub fn terminate_tree(pid: &str) -> bool {
     }
     #[cfg(windows)]
     {
-        Command::new("taskkill")
-            .args(["/PID", pid, "/T", "/F"])
+        let mut cmd = Command::new("taskkill");
+        cmd.args(["/PID", pid, "/T", "/F"])
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
+            .stderr(Stdio::null());
+        hide_window(&mut cmd);
+        cmd.status()
             .map(|s| s.success())
             .unwrap_or(false)
     }

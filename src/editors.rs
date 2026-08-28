@@ -34,7 +34,7 @@ pub fn open_in_default_app(path: &std::path::Path) -> std::io::Result<()> {
 
     cmd.stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map(|_| ())
+        .stderr(Stdio::null());
+    crate::process::hide_window(&mut cmd);
+    cmd.spawn().map(|_| ())
 }

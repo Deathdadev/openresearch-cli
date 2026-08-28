@@ -17,13 +17,15 @@ pub fn open_browser(url: &str) {
     let mut cmd = if use_shell {
         // `start` is a cmd.exe builtin on Windows, so it needs a shell.
         let mut c = Command::new("cmd");
-        c.args(["/C", program, url]);
+        // The empty quoted title keeps `start` from treating the URL as the title.
+        c.args(["/C", program, "", url]);
         c
     } else {
         let mut c = Command::new(program);
         c.arg(url);
         c
     };
+    crate::process::hide_window(&mut cmd);
 
     let _ = cmd
         .stdin(Stdio::null())

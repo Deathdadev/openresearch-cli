@@ -28,8 +28,10 @@ pub fn pick_folder() -> Result<Option<PathBuf>> {
 #[cfg(target_os = "windows")]
 pub fn pick_folder() -> Result<Option<PathBuf>> {
     let script = r#"Add-Type -AssemblyName System.Windows.Forms; $dialog = New-Object System.Windows.Forms.FolderBrowserDialog; $dialog.Description = 'Choose a project folder'; if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dialog.SelectedPath }"#;
-    let output = Command::new("powershell.exe")
-        .args(["-NoProfile", "-Command", script])
+    let mut command = Command::new("powershell.exe");
+    command.args(["-NoProfile", "-Command", script]);
+    crate::process::hide_window(&mut command);
+    let output = command
         .output()
         .map_err(|error| anyhow!("Could not open the folder picker: {error}"))?;
     if !output.status.success() {

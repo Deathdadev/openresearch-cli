@@ -7111,6 +7111,7 @@ pub async fn watch_runs(
 /// out to `orx`), the shell environment app mode imported, and the
 /// dashboard-managed env vars, real env winning.
 pub fn prepare_env(cmd: &mut tokio::process::Command) {
+    crate::process::hide_tokio_window(cmd);
     if let Ok(exe) = std::env::current_exe().and_then(|p| p.canonicalize()) {
         if let Some(dir) = exe.parent() {
             let mut path = std::ffi::OsString::from(dir);

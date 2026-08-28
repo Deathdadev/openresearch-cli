@@ -147,11 +147,13 @@ pub(crate) async fn hydrate_shell_env() {
     let script = format!(
         r#"$marker = '{marker}'; $keys = @({key_list}); $vals = foreach ($k in $keys) {{ $v = [Environment]::GetEnvironmentVariable($k, 'Process'); if ([string]::IsNullOrEmpty($v)) {{ $v = [Environment]::GetEnvironmentVariable($k, 'User') }}; if ([string]::IsNullOrEmpty($v)) {{ $v = [Environment]::GetEnvironmentVariable($k, 'Machine') }}; if ($null -eq $v) {{ '' }} else {{ $v }} }}; Write-Output ($marker + ($vals -join [char]0) + $marker)"#
     );
-    let fut = tokio::process::Command::new("powershell")
+    let mut command = tokio::process::Command::new("powershell");
+    command
         .args(["-NoProfile", "-Command", &script])
         .stdin(std::process::Stdio::null())
-        .kill_on_drop(true)
-        .output();
+        .kill_on_drop(true);
+    crate::process::hide_tokio_window(&mut command);
+    let fut = command.output();
     let out = match tokio::time::timeout(std::time::Duration::from_secs(5), fut).await {
         Ok(Ok(out)) => out,
         Ok(Err(err)) => {

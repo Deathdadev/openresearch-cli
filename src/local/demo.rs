@@ -1183,6 +1183,12 @@ fn tool_part(
 }
 
 fn install_repository(repo: &Path, bare: &Path) -> Result<String> {
+    if let Some(parent) = repo.parent() {
+        cleanup_stale_demo_tmps(parent);
+    }
+    if let Some(parent) = bare.parent() {
+        cleanup_stale_demo_tmps(parent);
+    }
     if repo.exists() {
         validate_worktree(repo)?;
     } else {
@@ -1215,6 +1221,9 @@ fn build_worktree(root: &Path) -> Result<()> {
     set_executable(root.join("runs/runcpu.sh"))?;
     git(root, &["init", "--object-format=sha1", "-b", "main"])?;
     git(root, &["config", "core.autocrlf", "false"])?;
+    #[cfg(windows)]
+    git(root, &["config", "core.filemode", "false"])?;
+    #[cfg(not(windows))]
     git(root, &["config", "core.filemode", "true"])?;
     git(root, &["add", "-A"])?;
     commit(root, "Import nanochat demo baseline")?;
@@ -1325,7 +1334,23 @@ fn write_assets<T: RustEmbed>(root: &Path) -> Result<()> {
     Ok(())
 }
 
+fn cleanup_stale_demo_tmps(parent: &Path) {
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if name.starts_with(".nanochat-demo-") || name.starts_with(".nanochat-demo-origin-") {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
 fn commit(repo: &Path, message: &str) -> Result<()> {
+    let null = crate::process::null_device();
     git(
         repo,
         &[
@@ -1336,7 +1361,7 @@ fn commit(repo: &Path, message: &str) -> Result<()> {
             "-c",
             "commit.gpgsign=false",
             "-c",
-            "core.hooksPath=/dev/null",
+            &format!("core.hooksPath={null}"),
             "commit",
             "-m",
             message,
@@ -1346,7 +1371,9 @@ fn commit(repo: &Path, message: &str) -> Result<()> {
 }
 
 fn git(dir: &Path, args: &[&str]) -> Result<String> {
+    let null = crate::process::null_device();
     let mut command = Command::new("git");
+    crate::process::hide_window(&mut command);
     for name in [
         "GIT_DIR",
         "GIT_WORK_TREE",
@@ -1366,16 +1393,16 @@ fn git(dir: &Path, args: &[&str]) -> Result<String> {
         .current_dir(dir)
         .args([
             "-c",
-            "core.attributesFile=/dev/null",
+            &format!("core.attributesFile={null}"),
             "-c",
-            "core.excludesFile=/dev/null",
+            &format!("core.excludesFile={null}"),
             "-c",
-            "core.hooksPath=/dev/null",
+            &format!("core.hooksPath={null}"),
         ])
         .args(args)
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_GLOBAL", null)
         .env("GIT_ATTR_NOSYSTEM", "1")
         .env("GIT_AUTHOR_NAME", "OpenResearch Demo")
         .env("GIT_AUTHOR_EMAIL", "demo@openresearch.sh")

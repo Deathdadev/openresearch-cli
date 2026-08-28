@@ -45,6 +45,7 @@ async fn gh(args: &[&str], timeout: Duration) -> Result<String> {
         .env("GH_HOST", "github.com")
         .env("GH_PROMPT_DISABLED", "1")
         .kill_on_drop(true);
+    crate::process::hide_tokio_window(&mut command);
     if let Some(paths) = super::shell_env::search_path() {
         command.env("PATH", paths);
     }
