@@ -1,0 +1,20 @@
+{
+  "name": "OpenResearch CLI (orx)",
+  "install": "rustup update --no-self-update stable && rustup default stable && rustup component add rustfmt clippy && pnpm -C ui install --frozen-lockfile && cargo build --locked",
+  "terminals": [
+    {
+      "name": "orx dashboard",
+      "command": "cargo run --locked -- up --no-browser --port 4791",
+      "description": "Runs `orx up`, the local dashboard and API on http://127.0.0.1:4791 (serves the embedded ui/dist)."
+    },
+    {
+      "name": "ui dev server",
+      "command": "pnpm -C ui dev --port 5173 --strictPort",
+      "description": "Vite dev server for the dashboard on http://127.0.0.1:5173 with hot reload; proxies /api to the orx dashboard on port 4791."
+    }
+  ],
+  "ports": [
+    { "name": "orx dashboard/API", "port": 4791 },
+    { "name": "ui dev server", "port": 5173 }
+  ]
+}
