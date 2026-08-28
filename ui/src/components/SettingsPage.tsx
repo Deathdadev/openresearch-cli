@@ -2163,7 +2163,7 @@ function AppearanceTab() {
 
 const CHANNEL_LABELS: Record<InstallChannel, string> = {
   installer: "Installed with the orx installer",
-  "app-bundle": "macOS app",
+  "app-bundle": "Desktop app",
   cargo: "Installed with cargo",
   homebrew: "Installed with Homebrew",
   nix: "Managed by Nix",

@@ -1,14 +1,10 @@
-//! macOS `.app` mode — the GUI entry point for the downloadable OpenResearch app.
+//! Desktop app mode — the GUI entry point for the downloadable OpenResearch app.
 //!
-//! The bundle's executable IS the `orx` binary. When launched from a `.app`
-//! (double-click), macOS starts it with no arguments, so `main` routes here
-//! instead of parsing CLI args. App mode owns the main thread with the AppKit
-//! run loop — giving a proper Dock icon (from the bundle's `.icns`), the
-//! "OpenResearch" menu-bar name, and interactive Dock-icon clicks — while the
-//! `orx up` dashboard server runs on background tokio worker threads.
-//!
-//! This is distinct from `orx up` launched in a terminal, which stays a plain
-//! CLI. The whole module is macOS-only; other targets compile it away.
+//! The bundle's executable IS the `orx` binary. When launched from the app
+//! (double-click), the OS starts it with no arguments, so `main` routes here
+//! instead of parsing CLI args. App mode owns the main thread with a native GUI
+//! run loop — Dock icon on macOS, system tray on Windows — while the `orx up`
+//! dashboard server runs on background tokio worker threads.
 
 /// True when `exe` is a `<name>.app/Contents/MacOS` bundle executable that was
 /// invoked under its own name — the signal to enter GUI app mode instead of
@@ -19,22 +15,28 @@
 /// must print help, not open a second dashboard. That relies on `exe` being
 /// canonicalized — it is the *symlink* whose name differs, so an uncanonicalized
 /// path would compare `orx` against `orx` and match.
-// Un-gated so its tests run on CI's Linux runner; only macOS has a caller.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
 pub(crate) fn is_bundle_exe_launch(exe: &std::path::Path, argv0: Option<&std::ffi::OsStr>) -> bool {
-    let in_bundle = exe
-        .parent()
-        .is_some_and(|dir| dir.ends_with("Contents/MacOS"));
-    let invoked_as_bundle_exe = argv0
+    let argv_name = argv0
         .map(std::path::Path::new)
-        .and_then(std::path::Path::file_name)
-        == exe.file_name();
-    in_bundle && invoked_as_bundle_exe
+        .and_then(std::path::Path::file_name);
+    if exe
+        .parent()
+        .is_some_and(|dir| dir.ends_with("Contents/MacOS"))
+    {
+        return argv_name == exe.file_name();
+    }
+    if exe
+        .parent()
+        .is_some_and(|dir| dir.file_name() == Some(std::ffi::OsStr::new("OpenResearch")))
+    {
+        return argv_name == Some(std::ffi::OsStr::new("OpenResearch.exe"));
+    }
+    false
 }
 
-/// Whether to enter GUI app mode. macOS `current_exe` reports the path the
-/// process was *launched as*, symlink and all, so it is canonicalized first.
-#[cfg(target_os = "macos")]
+/// Whether to enter GUI app mode.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub fn launched_as_app_bundle() -> bool {
     let Ok(exe) = std::env::current_exe().and_then(|exe| exe.canonicalize()) else {
         return false;
@@ -42,31 +44,31 @@ pub fn launched_as_app_bundle() -> bool {
     is_bundle_exe_launch(&exe, std::env::args_os().next().as_deref())
 }
 
-/// Enter GUI app mode: adopt the user's shell PATH, pick a free port, start the
-/// dashboard server on background threads, and hand the main thread to the
-/// AppKit run loop. Returns only when the user quits the app (usually the
-/// process just exits).
+#[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
+fn reserve_app_port() -> u16 {
+    std::net::TcpListener::bind(("127.0.0.1", 0))
+        .and_then(|l| l.local_addr())
+        .map(|a| a.port())
+        .unwrap_or(4791)
+}
+
 #[cfg(target_os = "macos")]
 pub async fn run() {
-    // App mode returns before `dispatch`, which is where `orx up` takes this
-    // same read lock. Without it `orx delete` from a CLI install sees no reader
-    // and wipes the store out from under a running app.
     let lifecycle = crate::store::open_lifecycle_lock()
         .inspect_err(|err| eprintln!("openresearch app: could not open the lifecycle lock: {err}"))
         .ok();
-    let _lifecycle_guard = lifecycle.as_ref().and_then(|lock| {
-        lock.read()
-            .inspect_err(|err| {
-                eprintln!("openresearch app: could not hold the lifecycle lock: {err}")
-            })
-            .ok()
-    });
-    // Ephemeral loopback port so the app never collides with a terminal
-    // `orx up`. Bind-then-drop to reserve it; the tiny race is harmless locally.
-    let port = std::net::TcpListener::bind(("127.0.0.1", 0))
-        .and_then(|l| l.local_addr())
-        .map(|a| a.port())
-        .unwrap_or(4791);
+    let _lifecycle_guard = lifecycle.as_ref().and_then(|lock| lock.read().ok());
+    let port = reserve_app_port();
+    imp::run_event_loop(format!("http://127.0.0.1:{port}/"), port);
+}
+
+#[cfg(windows)]
+pub async fn run() {
+    let lifecycle = crate::store::open_lifecycle_lock()
+        .inspect_err(|err| eprintln!("openresearch app: could not open the lifecycle lock: {err}"))
+        .ok();
+    let _lifecycle_guard = lifecycle.as_ref().and_then(|lock| lock.read().ok());
+    let port = reserve_app_port();
     imp::run_event_loop(format!("http://127.0.0.1:{port}/"), port);
 }
 
@@ -130,6 +132,139 @@ pub(crate) async fn hydrate_shell_env() {
              environment. shell stderr: {}",
             String::from_utf8_lossy(&out.stderr).trim()
         ),
+    }
+}
+
+#[cfg(windows)]
+pub(crate) async fn hydrate_shell_env() {
+    let marker = format!("__ORX_ENV_{}__", uuid::Uuid::new_v4().simple());
+    let keys: Vec<&str> = crate::local::shell_env::IMPORTED.to_vec();
+    let key_list = keys
+        .iter()
+        .map(|key| format!("'{key}'"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let script = format!(
+        r#"$marker = '{marker}'; $keys = @({key_list}); $vals = foreach ($k in $keys) {{ $v = [Environment]::GetEnvironmentVariable($k, 'Process'); if ([string]::IsNullOrEmpty($v)) {{ $v = [Environment]::GetEnvironmentVariable($k, 'User') }}; if ([string]::IsNullOrEmpty($v)) {{ $v = [Environment]::GetEnvironmentVariable($k, 'Machine') }}; if ($null -eq $v) {{ '' }} else {{ $v }} }}; Write-Output ($marker + ($vals -join [char]0) + $marker)"#
+    );
+    let fut = tokio::process::Command::new("powershell")
+        .args(["-NoProfile", "-Command", &script])
+        .stdin(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .output();
+    let out = match tokio::time::timeout(std::time::Duration::from_secs(5), fut).await {
+        Ok(Ok(out)) => out,
+        Ok(Err(err)) => {
+            eprintln!(
+                "openresearch app: could not run PowerShell: {err}; using the inherited environment"
+            );
+            return;
+        }
+        Err(_) => {
+            eprintln!("openresearch app: PowerShell did not answer within 5s; using the inherited environment");
+            return;
+        }
+    };
+    match crate::local::shell_env::parse_probe(&String::from_utf8_lossy(&out.stdout), &marker) {
+        Some(vars) => {
+            let adopted: Vec<String> = crate::local::shell_env::IMPORTED
+                .iter()
+                .filter_map(|key| Some(format!("{key}={:?}", vars.get(key)?)))
+                .collect();
+            eprintln!(
+                "openresearch app: adopted the shell environment: {}",
+                adopted.join(" ")
+            );
+            crate::local::shell_env::set(vars);
+        }
+        None => eprintln!(
+            "openresearch app: the environment probe returned nothing usable; using the inherited \
+             environment. PowerShell stderr: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ),
+    }
+}
+
+#[cfg(windows)]
+fn focus_or_open(url: &str) {
+    crate::browser::open_browser(url);
+}
+
+#[cfg(windows)]
+mod imp {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
+    use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
+    use tray_icon::{TrayIconBuilder, TrayIconEvent};
+
+    static QUIT: AtomicBool = AtomicBool::new(false);
+
+    pub(super) fn run_event_loop(url: String, port: u16) {
+        tokio::spawn(async move {
+            let args = crate::UpArgs {
+                port,
+                remote: None,
+                no_browser: true,
+                no_agent: false,
+                model: None,
+            };
+            if let Err(err) = crate::commands::up::run(args).await {
+                eprintln!("openresearch app: dashboard server exited: {err}");
+            }
+        });
+
+        let ready_url = url.clone();
+        tokio::spawn(async move {
+            for _ in 0..100 {
+                if tokio::net::TcpStream::connect(("127.0.0.1", port))
+                    .await
+                    .is_ok()
+                {
+                    crate::browser::open_browser(&ready_url);
+                    return;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        });
+
+        let menu = Menu::new();
+        let open_item = MenuItem::new("Open Dashboard", true, None);
+        let quit_item = MenuItem::new("Quit", true, None);
+        let _ = menu.append(&open_item);
+        let _ = menu.append(&PredefinedMenuItem::separator());
+        let _ = menu.append(&quit_item);
+
+        let open_id = open_item.id().clone();
+        let quit_id = quit_item.id().clone();
+        let url_for_menu = Arc::new(url);
+
+        let _tray = TrayIconBuilder::new()
+            .with_menu(Box::new(menu))
+            .with_tooltip("OpenResearch")
+            .build()
+            .expect("tray icon");
+
+        while !QUIT.load(Ordering::SeqCst) {
+            while let Ok(event) = MenuEvent::receiver().try_recv() {
+                if event.id == open_id {
+                    super::focus_or_open(&url_for_menu);
+                } else if event.id == quit_id {
+                    QUIT.store(true, Ordering::SeqCst);
+                }
+            }
+            while let Ok(event) = TrayIconEvent::receiver().try_recv() {
+                if let TrayIconEvent::Click {
+                    button: tray_icon::MouseButton::Left,
+                    button_state: tray_icon::MouseButtonState::Up,
+                    ..
+                } = event
+                {
+                    super::focus_or_open(&url_for_menu);
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
     }
 }
 
@@ -424,6 +559,16 @@ mod tests {
                 "/Applications/OpenResearch.app/Contents/MacOS/orx"
             ))
         ));
+    }
+
+    #[test]
+    fn windows_app_exe_is_an_app_launch() {
+        let exe = Path::new("/Users/alice/AppData/Local/Programs/OpenResearch/OpenResearch.exe");
+        assert!(is_bundle_exe_launch(
+            exe,
+            Some(OsStr::new("OpenResearch.exe"))
+        ));
+        assert!(!is_bundle_exe_launch(exe, Some(OsStr::new("orx.exe"))));
     }
 
     #[test]

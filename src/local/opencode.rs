@@ -213,10 +213,11 @@ fn playbook_md(project: &LocalProject, state: &ProjectState) -> String {
         .map(|skill| format!("- `{}`", skill.name))
         .collect::<Vec<_>>()
         .join("\n");
-    let template = SYSTEM_PROMPT
+    let normalized_prompt = SYSTEM_PROMPT.replace("\r\n", "\n");
+    let template = normalized_prompt
         .split_once("-->\n\n")
         .map(|(_, rest)| rest)
-        .unwrap_or(SYSTEM_PROMPT);
+        .unwrap_or(normalized_prompt.as_str());
     template
         .replace("{name}", name)
         .replace("{id}", id)

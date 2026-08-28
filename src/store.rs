@@ -120,13 +120,26 @@ fn env_path(key: &str) -> Option<PathBuf> {
 /// `$XDG_DATA_HOME/openresearch` else `~/.local/share/openresearch` — the tail
 /// of the resolution chain, shared by `data_dir()` and `default_data_dir()`.
 fn xdg_default_data_dir() -> PathBuf {
-    let base = env_path("XDG_DATA_HOME").unwrap_or_else(|| {
-        dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(".local")
-            .join("share")
-    });
+    let base = env_path("XDG_DATA_HOME")
+        .or_else(default_data_base)
+        .unwrap_or_else(|| {
+            dirs::home_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join(".local")
+                .join("share")
+        });
     base.join("openresearch")
+}
+
+fn default_data_base() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        dirs::data_local_dir()
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
 }
 
 /// The data dir ignoring any persisted user choice — where resolution would

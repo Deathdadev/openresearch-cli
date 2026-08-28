@@ -984,6 +984,7 @@ mod tests {
         assert!(!out.0.join("../../../etc/evil").exists());
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_timed_out_pass_stops_the_run_but_a_tex_error_does_not() {
         // A hanging engine must not spend the whole budget again on every
@@ -1044,6 +1045,7 @@ mod tests {
         assert!(!path.exists());
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_symlinked_pdf_is_refused_instead_of_followed() {
         let scratch = ScratchDir::new("symlink-case").expect("scratch dir");

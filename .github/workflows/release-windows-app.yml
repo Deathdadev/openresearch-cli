@@ -1,0 +1,102 @@
+name: Attach Windows app to release
+
+on:
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to attach the Windows app to (e.g. v0.1.99)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-windows-app
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: ${{ vars.WINDOWS_SIGNING_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_dispatch')) }}
+    runs-on: ubuntu-latest
+    outputs:
+      ok: ${{ steps.gate.outputs.ok }}
+      tag: ${{ steps.gate.outputs.tag }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || inputs.tag }}
+      - id: gate
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_TAG" ]; then
+            tag="$INPUT_TAG"
+          else
+            version="$(grep -m1 '^version = ' Cargo.toml | sed -E 's/version = "(.*)"/\1/')"
+            tag="v${version}"
+          fi
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::notice::No release $tag found — nothing to attach."
+            echo "ok=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  windows-app:
+    needs: check
+    if: ${{ needs.check.outputs.ok == 'true' }}
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || inputs.tag }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+
+      - name: Build Windows app layout
+        run: powershell -File scripts/build-windows-app.ps1
+        env:
+          ORX_OFFICIAL_RELEASE_BUILD: "1"
+
+      - name: Verify packaged production channel
+        shell: bash
+        env:
+          ORX_TELEMETRY_ENV: "off"
+        run: test "$(dist/OpenResearch/orx.exe --no-telemetry version --build-channel)" = production
+
+      - name: Package setup executable
+        run: powershell -File scripts/package-windows-app.ps1
+
+      - name: Upload setup and manifest to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.check.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release delete-asset "$TAG" windows-app.json --yes 2>/dev/null || true
+          gh release upload "$TAG" dist/OpenResearchSetup.exe --clobber
+          jq -n \
+            --arg version "${TAG#v}" \
+            --arg tag "$TAG" \
+            --arg asset OpenResearchSetup.exe \
+            --arg sha256 "$(sha256sum dist/OpenResearchSetup.exe | cut -d' ' -f1)" \
+            '$ARGS.named' > dist/windows-app.json
+          cat dist/windows-app.json
+          gh release upload "$TAG" dist/windows-app.json --clobber

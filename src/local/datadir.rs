@@ -222,9 +222,10 @@ pub fn move_data_dir(
                     old_path_left: None,
                 });
             }
-            // EXDEV: the ancestor-walk mis-judged the device (e.g. the volume
-            // mounts *at* the target). Fall through to the copy path.
-            Err(e) if e.raw_os_error() == Some(libc::EXDEV) => {}
+            // EXDEV / ERROR_NOT_SAME_DEVICE: the ancestor-walk mis-judged the
+            // device (e.g. the volume mounts *at* the target). Fall through to
+            // the copy path.
+            Err(e) if is_cross_device_rename_error(&e) => {}
             Err(e) => return Err(anyhow!("Rename to {} failed: {e}", target.display())),
         }
     }
@@ -328,6 +329,17 @@ fn paths_equal(a: &Path, b: &Path) -> bool {
     match ca {
         Ok(ca) => ca == *b || ca == b.canonicalize().unwrap_or_else(|_| b.to_path_buf()),
         Err(_) => a == b,
+    }
+}
+
+/// Whether a rename failed because source and target live on different devices.
+fn is_cross_device_rename_error(err: &std::io::Error) -> bool {
+    match err.raw_os_error() {
+        #[cfg(unix)]
+        Some(code) if code == libc::EXDEV => true,
+        #[cfg(windows)]
+        Some(code) if code == 17 => true, // ERROR_NOT_SAME_DEVICE
+        _ => false,
     }
 }
 

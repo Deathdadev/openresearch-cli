@@ -1395,13 +1395,13 @@ fn git(dir: &Path, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
-fn set_executable(path: PathBuf) -> Result<()> {
+fn set_executable(_path: PathBuf) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut permissions = std::fs::metadata(&path)?.permissions();
+        let mut permissions = std::fs::metadata(&_path)?.permissions();
         permissions.set_mode(0o755);
-        std::fs::set_permissions(path, permissions)?;
+        std::fs::set_permissions(_path, permissions)?;
     }
     Ok(())
 }

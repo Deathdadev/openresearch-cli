@@ -26,6 +26,7 @@ mod jobs;
 mod local;
 mod output;
 mod plane;
+mod process;
 mod remote;
 mod store;
 mod telemetry;
@@ -755,17 +756,12 @@ pub struct PaperArgs {
 // worker threads. A `current_thread` flavor would deadlock. See commands::app.
 #[tokio::main]
 async fn main() {
-    // Double-clicked as the macOS .app? Enter GUI app mode (Dock icon, dashboard
-    // server, browser) instead of parsing CLI args. Also require an empty argv so
-    // the bundled binary stays usable as a CLI (`…/MacOS/OpenResearch up`), since
-    // the bundle itself launches it with no arguments. See commands::app.
-    #[cfg(target_os = "macos")]
+    // Double-clicked as the desktop app? Enter GUI app mode instead of parsing CLI args.
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     if commands::app::launched_as_app_bundle() && std::env::args_os().len() == 1 {
-        // Shell hydration may change XDG_CONFIG_HOME; settle it before telemetry or the lifecycle lock.
         commands::app::hydrate_shell_env().await;
         telemetry::set_flag(false);
         let _session = telemetry::TelemetrySession::start_app();
-        // AppKit owns process shutdown; the durable outbox covers termination before delivery.
         commands::app::run().await;
         return;
     }

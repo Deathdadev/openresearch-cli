@@ -57,12 +57,24 @@ pub fn clone_path(owner: &str, repo: &str) -> PathBuf {
 fn cache_root() -> PathBuf {
     std::env::var_os("ORX_CACHE_DIR")
         .map(PathBuf::from)
+        .or_else(default_cache_root)
         .unwrap_or_else(|| {
             dirs::home_dir()
                 .unwrap_or_else(|| PathBuf::from("."))
                 .join(".cache")
                 .join("openresearch")
         })
+}
+
+fn default_cache_root() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        dirs::cache_dir().map(|dir| dir.join("openresearch"))
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
 }
 
 /// Root for per-chat-session worktrees of a project repository.
@@ -1459,7 +1471,7 @@ fn authenticated_git_command(repo_path: &Path) -> Command {
         .env("GIT_CONFIG_KEY_1", "credential.helper")
         .env("GIT_CONFIG_VALUE_1", GITHUB_CREDENTIAL_HELPER)
         .env("GIT_CONFIG_KEY_2", "core.hooksPath")
-        .env("GIT_CONFIG_VALUE_2", "/dev/null");
+        .env("GIT_CONFIG_VALUE_2", crate::process::null_device());
     #[cfg(unix)]
     command.process_group(0);
     command
@@ -1525,13 +1537,7 @@ fn authenticated_git(repo_path: &Path, args: &[&str], timeout: Duration) -> Resu
 }
 
 fn terminate_git_process_tree(child: &mut Child) {
-    #[cfg(unix)]
-    unsafe {
-        // Git owns this process group, including credential-bearing transport children.
-        libc::kill(-(child.id() as i32), libc::SIGKILL);
-    }
-    #[cfg(not(unix))]
-    let _ = child.kill();
+    let _ = crate::process::kill_process_tree(child);
 }
 
 fn push(repo_path: &Path, args: &[&str]) -> Result<()> {
@@ -1859,7 +1865,14 @@ pub fn working_tree_diff_against(repo: &Path, base: Option<&str>) -> Result<Diff
         }
         if let Ok(chunk) = git_bytes(
             repo,
-            &["--no-pager", "diff", "--no-index", "--", "/dev/null", f],
+            &[
+                "--no-pager",
+                "diff",
+                "--no-index",
+                "--",
+                crate::process::null_device(),
+                f,
+            ],
             &[1],
         ) {
             bytes.extend_from_slice(&chunk);

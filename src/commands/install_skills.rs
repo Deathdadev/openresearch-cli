@@ -278,9 +278,13 @@ mod tests {
         let lines: Vec<&str> = body.lines().collect();
         assert_eq!(lines.len(), 2);
         assert!(lines[0].contains("Claude Code"));
-        assert!(lines[0].contains(".claude/skills/orx/SKILL.md"));
+        assert!(lines[0]
+            .replace('\\', "/")
+            .contains(".claude/skills/orx/SKILL.md"));
         assert!(lines[1].contains("Cursor"));
-        assert!(lines[1].contains(".cursor/skills/orx/SKILL.md"));
+        assert!(lines[1]
+            .replace('\\', "/")
+            .contains(".cursor/skills/orx/SKILL.md"));
     }
 
     #[test]

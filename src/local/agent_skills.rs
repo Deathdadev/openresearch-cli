@@ -388,8 +388,8 @@ mod tests {
                 assert_eq!(lines.next(), Some("---"), "{} missing closing ---", s.name);
                 // A non-empty body follows the closing frontmatter fence
                 // (`\n---\n\n` separates the frontmatter block from the body).
-                let body = s
-                    .content
+                let normalized = s.content.replace("\r\n", "\n");
+                let body = normalized
                     .split_once("\n---\n\n")
                     .map(|(_, body)| body)
                     .unwrap_or("");

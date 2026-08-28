@@ -134,25 +134,30 @@ impl SshTarget {
 /// Shared ssh options: BatchMode (never hang on a prompt) + connection
 /// multiplexing so repeated polls are cheap.
 fn ssh_opts(target: &SshTarget) -> Vec<String> {
-    // A 16-hex hash leaves room for ssh's temporary bind suffix. It folds in
-    // the extra opts so different ports never share a control socket.
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    target.dest.hash(&mut h);
-    target.extra_opts.hash(&mut h);
-    let cp = control_dir().join(format!("{:016x}", h.finish()));
     let mut opts = vec![
         "-o".into(),
         "BatchMode=yes".into(),
         "-o".into(),
         "ConnectTimeout=10".into(),
-        "-o".into(),
-        "ControlMaster=auto".into(),
-        "-o".into(),
-        format!("ControlPath={}", cp.display()),
-        "-o".into(),
-        "ControlPersist=60".into(),
     ];
+    #[cfg(not(windows))]
+    {
+        // A 16-hex hash leaves room for ssh's temporary bind suffix. It folds in
+        // the extra opts so different ports never share a control socket.
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        target.dest.hash(&mut h);
+        target.extra_opts.hash(&mut h);
+        let cp = control_dir().join(format!("{:016x}", h.finish()));
+        opts.extend([
+            "-o".into(),
+            "ControlMaster=auto".into(),
+            "-o".into(),
+            format!("ControlPath={}", cp.display()),
+            "-o".into(),
+            "ControlPersist=60".into(),
+        ]);
+    }
     opts.extend(target.extra_opts.iter().cloned());
     opts
 }
@@ -489,7 +494,10 @@ mod tests {
         assert_eq!(target.dest, "mybox");
         assert!(target.extra_opts.is_empty());
         // No `-p`/`-o Strict…` beyond the shared multiplexing opts.
+        #[cfg(not(windows))]
         assert_eq!(ssh_opts(&target).len(), 10);
+        #[cfg(windows)]
+        assert_eq!(ssh_opts(&target).len(), 4);
     }
 
     #[test]
@@ -526,6 +534,7 @@ mod tests {
 
     /// Explicit targets on the same host but different ports must not share a
     /// ControlMaster socket — the opts are part of the ControlPath hash.
+    #[cfg(not(windows))]
     #[test]
     fn control_path_differs_per_port() {
         let control_path = |t: &SshTarget| {
