@@ -32,7 +32,7 @@ fn expand(path: &str) -> std::path::PathBuf {
 fn device_name(line: &str) -> String {
     key_comment(line)
         .or_else(|| {
-            std::process::Command::new("hostname")
+            crate::process::command("hostname")
                 .output()
                 .ok()
                 .filter(|o| o.status.success())

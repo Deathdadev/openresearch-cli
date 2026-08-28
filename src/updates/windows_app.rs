@@ -103,7 +103,7 @@ pub async fn update(root: &Path, current: &Version, dry_run: bool, background: b
     std::fs::write(&setup, &bytes)
         .map_err(|e| anyhow!("Could not write {}: {}", setup.display(), e))?;
 
-    let status = std::process::Command::new(&setup)
+    let status = crate::process::command(&setup)
         .args(["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"])
         .stdin(Stdio::null())
         .stdout(Stdio::null())

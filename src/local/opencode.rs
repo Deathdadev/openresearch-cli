@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use serde_json::json;
-use tokio::process::{Child, Command};
+use tokio::process::Child;
 use tokio::sync::Mutex;
 
 use crate::error::{anyhow, Result};
@@ -452,7 +452,7 @@ async fn spawn_agent(
         .open(agent_log_path())
         .map_err(|e| anyhow!("Could not open {}: {}", agent_log_path().display(), e))?;
 
-    let mut cmd = Command::new(&bin);
+    let mut cmd = crate::process::tokio_command(&bin);
     cmd.arg("serve")
         .arg("--port")
         .arg(port.to_string())

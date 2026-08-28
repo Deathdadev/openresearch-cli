@@ -3,8 +3,6 @@
 use std::time::Duration;
 
 use serde_json::Value;
-use tokio::process::Command;
-
 use crate::error::{anyhow, Result};
 
 const UA: &str = concat!("orx/", env!("CARGO_PKG_VERSION"));
@@ -37,15 +35,14 @@ pub async fn status() -> Status {
 
 async fn gh(args: &[&str], timeout: Duration) -> Result<String> {
     let mut command = match super::shell_env::find_on_path("gh") {
-        Some(path) => Command::new(path),
-        None => Command::new("gh"),
+        Some(path) => crate::process::tokio_command(path),
+        None => crate::process::tokio_command("gh"),
     };
     command
         .args(args)
         .env("GH_HOST", "github.com")
         .env("GH_PROMPT_DISABLED", "1")
         .kill_on_drop(true);
-    crate::process::hide_tokio_window(&mut command);
     if let Some(paths) = super::shell_env::search_path() {
         command.env("PATH", paths);
     }

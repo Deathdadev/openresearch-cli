@@ -18,8 +18,6 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
 
-use tokio::process::Command;
-
 use crate::error::{anyhow, Result};
 
 /// Keep sockets out of config paths, which can exceed macOS's 104-byte limit.
@@ -180,7 +178,7 @@ async fn ssh_run_bytes(
     stdin: Option<&[u8]>,
 ) -> Result<String> {
     prepare_control_dir()?;
-    let mut cmd = Command::new("ssh");
+    let mut cmd = crate::process::tokio_command("ssh");
     cmd.args(ssh_opts(target))
         .arg("--")
         .arg(&target.dest)
@@ -232,7 +230,7 @@ async fn ssh_run_file(
     source: &std::path::Path,
 ) -> Result<String> {
     prepare_control_dir()?;
-    let mut child = Command::new("ssh")
+    let mut child = crate::process::tokio_command("ssh")
         .args(ssh_opts(target))
         .arg("--")
         .arg(&target.dest)

@@ -264,7 +264,7 @@ async fn opencode_models(bin: &PathBuf) -> Vec<super::ModelInfo> {
 /// fires for the session proper — this mirrors the claude/codex one-shot
 /// children instead. Any failure lands on `None` and keeps the placeholder.
 async fn opencode_generate_title(bin: &PathBuf, first_message: &str) -> Option<String> {
-    let mut cmd = tokio::process::Command::new(bin);
+    let mut cmd = crate::process::tokio_command(bin);
     // The user's message is embedded in the prompt, so the child must not be
     // able to act on it: the built-in read-only `plan` agent denies writes,
     // `--pure` skips external plugins, and the temp cwd keeps any residual
@@ -305,7 +305,7 @@ async fn opencode_generate_title(bin: &PathBuf, first_message: &str) -> Option<S
 
 /// Run `opencode <args>` in the home dir, returning stdout on success.
 async fn run_models(bin: &PathBuf, args: &[&str]) -> Option<String> {
-    let mut cmd = tokio::process::Command::new(bin);
+    let mut cmd = crate::process::tokio_command(bin);
     cmd.args(args)
         .current_dir(dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
         .stdin(std::process::Stdio::null());

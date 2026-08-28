@@ -594,7 +594,7 @@ fn spawn_background_update() {
 /// config dir than the parent reads — losing the restart signal and the backoff,
 /// and failing to serialize against a terminal `orx update`.
 fn updater_command() -> Result<tokio::process::Command> {
-    let mut cmd = tokio::process::Command::new(std::env::current_exe()?);
+    let mut cmd = crate::process::tokio_command(std::env::current_exe()?);
     cmd.args(["update", "--background"])
         .stdin(std::process::Stdio::null());
     if let Some(path) = crate::local::shell_env::search_path() {

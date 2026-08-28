@@ -77,7 +77,7 @@ pub fn run_job(spec: &LocalJobSpec) -> Result<PathBuf> {
         )
     })?;
 
-    let mut cmd = std::process::Command::new(&bash);
+    let mut cmd = crate::process::command(&bash);
     cmd.arg("run.sh")
         .envs(&spec.secret_env)
         .current_dir(&dir)
@@ -221,7 +221,8 @@ pub struct Gpu {
 /// Blocking (subprocesses); call via `spawn_blocking` from async handlers.
 pub fn hardware_info() -> LocalHardware {
     let cmd = |name: &str, args: &[&str]| -> Option<String> {
-        let out = std::process::Command::new(name).args(args).output().ok()?;
+        let mut command = crate::process::command(name);
+        let out = command.args(args).output().ok()?;
         out.status
             .success()
             .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())

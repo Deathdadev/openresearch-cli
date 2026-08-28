@@ -13,7 +13,7 @@
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
-use tokio::process::{Child, Command};
+use tokio::process::Child;
 
 use crate::error::{anyhow, Result};
 use crate::jobs::ssh::{HostKeyPolicy, SshTarget};
@@ -276,7 +276,7 @@ fn ssh_forward_args(target: &SshTarget, forward: &str, remote_cmd: &str) -> Vec<
 /// Spawn `ssh <opts> -L <forward> -- <dest> <remote_cmd>` with the shared
 /// connection options, detaching stdin so ssh never blocks on a password prompt.
 fn spawn_ssh_forward(target: &SshTarget, forward: &str, remote_cmd: &str) -> Result<Child> {
-    let mut cmd = Command::new("ssh");
+    let mut cmd = crate::process::tokio_command("ssh");
     cmd.args(ssh_forward_args(target, forward, remote_cmd))
         .stdin(Stdio::null())
         .stdout(Stdio::inherit())

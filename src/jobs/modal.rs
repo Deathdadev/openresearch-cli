@@ -19,8 +19,6 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use serde_json::{json, Value};
-use tokio::process::Command;
-
 use crate::error::{anyhow, Result};
 
 /// Bundled Python launcher. Subcommands (argv[1]):
@@ -152,7 +150,7 @@ fn python_bin() -> String {
 
 /// Does `py -c "import modal"` succeed?
 async fn imports_modal(py: &str) -> bool {
-    Command::new(py)
+    crate::process::tokio_command(py)
         .args(["-c", "import modal"])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -166,7 +164,7 @@ async fn imports_modal(py: &str) -> bool {
 /// First interpreter on PATH that can build a venv (to bootstrap the managed env).
 async fn base_python() -> Option<String> {
     for c in ["python3", "python"] {
-        let ok = Command::new(c)
+        let ok = crate::process::tokio_command(c)
             .args(["-c", "import venv"])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -212,7 +210,7 @@ pub async fn ensure_env() -> Result<()> {
         if let Some(parent) = dir.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        let ok = Command::new(&base)
+        let ok = crate::process::tokio_command(&base)
             .arg("-m")
             .arg("venv")
             .arg(&dir)
@@ -229,7 +227,7 @@ pub async fn ensure_env() -> Result<()> {
         }
     }
     eprintln!("orx: installing the `modal` SDK…");
-    let ok = Command::new(&managed_str)
+    let ok = crate::process::tokio_command(&managed_str)
         .args([
             "-m",
             "pip",
@@ -308,7 +306,7 @@ fn launcher_error(what: &str, code: Option<i32>, stderr: &str) -> crate::error::
 
 /// Run the launcher and capture its output (submit / status / cancel).
 async fn launcher_capture(args: &[&str], stdin: Option<&str>) -> Result<Vec<u8>> {
-    let mut cmd = Command::new(python_bin());
+    let mut cmd = crate::process::tokio_command(python_bin());
     cmd.arg("-c")
         .arg(LAUNCHER)
         .args(args)
@@ -487,7 +485,7 @@ pub async fn stream_logs(
 ) -> Result<u64> {
     use tokio::io::{AsyncBufReadExt as _, BufReader};
 
-    let mut child = Command::new(python_bin())
+    let mut child = crate::process::tokio_command(python_bin())
         .arg("-c")
         .arg(LAUNCHER)
         .args(["logs", sandbox_id])
@@ -586,7 +584,7 @@ pub async fn detect() -> ModalStatus {
         token_source,
         error,
     };
-    let probe = Command::new(python_bin())
+    let probe = crate::process::tokio_command(python_bin())
         .arg("-c")
         .arg("import modal")
         .stdin(Stdio::null())

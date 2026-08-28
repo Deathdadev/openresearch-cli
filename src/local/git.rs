@@ -1441,7 +1441,13 @@ pub fn prepare_shallow_repository_for_publication(repo_path: &Path) -> Result<bo
     Ok(true)
 }
 
-const GITHUB_CREDENTIAL_HELPER: &str = "!gh auth git-credential";
+const GITHUB_CREDENTIAL_HELPER: &str = "gh auth git-credential";
+
+fn github_credential_helper() -> String {
+    super::shell_env::find_on_path("gh")
+        .map(|path| format!("{} auth git-credential", path.display()))
+        .unwrap_or_else(|| GITHUB_CREDENTIAL_HELPER.to_string())
+}
 
 fn redact_remote_urls(text: &str) -> String {
     text.split_whitespace()
@@ -1475,7 +1481,7 @@ fn authenticated_git_command(repo_path: &Path) -> Command {
         .env("GIT_CONFIG_KEY_0", "credential.helper")
         .env("GIT_CONFIG_VALUE_0", "")
         .env("GIT_CONFIG_KEY_1", "credential.helper")
-        .env("GIT_CONFIG_VALUE_1", GITHUB_CREDENTIAL_HELPER)
+        .env("GIT_CONFIG_VALUE_1", github_credential_helper())
         .env("GIT_CONFIG_KEY_2", "core.hooksPath")
         .env("GIT_CONFIG_VALUE_2", crate::process::null_device());
     #[cfg(unix)]
@@ -2202,7 +2208,7 @@ mod tests {
         assert_eq!(env("GIT_CONFIG_VALUE_0"), Some(OsStr::new("")));
         assert_eq!(
             env("GIT_CONFIG_VALUE_1"),
-            Some(OsStr::new("!gh auth git-credential"))
+            Some(OsStr::new(github_credential_helper().as_str()))
         );
     }
 

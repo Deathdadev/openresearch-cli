@@ -20,7 +20,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Output;
 
 use base64::Engine as _;
 
@@ -463,8 +463,7 @@ const CREDENTIAL_HELPER: &str = "!f() { host=; while IFS='=' read key value; do 
 /// argv, never the clone's config — and only the variable's *name* appears in
 /// the configuration git carries into `git-remote-https`.
 fn git(dir: Option<&Path>, auth: Option<Auth>, args: &[&str]) -> Result<Output> {
-    let mut command = Command::new("git");
-    crate::process::hide_window(&mut command);
+    let mut command = crate::process::command("git");
     if let Some(dir) = dir {
         command.current_dir(dir);
     }
@@ -1219,6 +1218,7 @@ fn mime_for(name: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
 
     fn project(id: &str, host: &str) -> Project {
         Project {
