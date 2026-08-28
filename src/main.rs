@@ -1,4 +1,5 @@
 //! OpenResearch CLI (`orx`) — Rust port entry point.
+#![cfg_attr(all(windows, feature = "windows-gui"), windows_subsystem = "windows")]
 //!
 //! A clap-derive command tree mirroring the USAGE
 //! block, dispatched from an async `tokio::main`. Each subcommand routes to one

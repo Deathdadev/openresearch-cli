@@ -10,6 +10,11 @@ license = "MIT"
 name = "orx"
 path = "src/main.rs"
 
+[features]
+# Windows desktop app build: hides the console window when OpenResearch.exe is
+# launched from the installer. Enabled only by scripts/build-windows-app.ps1.
+windows-gui = []
+
 [dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "io-std", "time", "fs", "process", "sync", "signal"] }
 tokio-util = { version = "0.7", features = ["io"] }

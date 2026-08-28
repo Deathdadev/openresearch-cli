@@ -14,10 +14,10 @@ New-Item -ItemType Directory -Force -Path $Dist | Out-Null
 Copy-Item (Join-Path $Root "target\release\orx.exe") (Join-Path $Dist "orx.exe")
 
 Write-Host "==> Building GUI-subsystem OpenResearch.exe"
-$env:RUSTFLAGS = "-C link-arg=/SUBSYSTEM:WINDOWS -C link-arg=/ENTRY:mainCRTStartup"
-cargo build --release --bin orx --locked
+# Use the windows-gui feature instead of RUSTFLAGS: global linker flags also hit
+# proc-macro crates and fail with "unresolved external symbol main".
+cargo build --release --bin orx --features windows-gui --locked
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-Remove-Item Env:RUSTFLAGS
 Copy-Item (Join-Path $Root "target\release\orx.exe") (Join-Path $Dist "OpenResearch.exe")
 
 Write-Host "==> Assembling icons"
