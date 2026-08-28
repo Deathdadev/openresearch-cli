@@ -7114,15 +7114,12 @@ pub fn prepare_env(cmd: &mut tokio::process::Command) {
     crate::process::hide_tokio_window(cmd);
     if let Ok(exe) = std::env::current_exe().and_then(|p| p.canonicalize()) {
         if let Some(dir) = exe.parent() {
-            let path = match crate::local::shell_env::search_path().filter(|p| !p.is_empty()) {
-                Some(existing) => {
-                    let paths = std::iter::once(dir.to_path_buf())
-                        .chain(std::env::split_paths(&existing))
-                        .collect::<Vec<_>>();
-                    std::env::join_paths(paths).unwrap_or_else(|_| dir.as_os_str().to_owned())
-                }
-                None => dir.as_os_str().to_owned(),
-            };
+            let mut path = std::ffi::OsString::from(dir);
+            if let Some(existing) = crate::local::shell_env::search_path().filter(|p| !p.is_empty())
+            {
+                path.push(":");
+                path.push(existing);
+            }
             cmd.env("PATH", path);
         }
     }

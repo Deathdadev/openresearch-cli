@@ -430,18 +430,7 @@ async fn claude_generate_title(bin: &Path, first_message: &str) -> Option<String
 pub(crate) fn find_claude() -> Option<PathBuf> {
     find_on_path("claude").or_else(|| {
         let home = dirs::home_dir()?;
-        #[cfg(windows)]
-        let candidates = [
-            ".claude/local/claude.exe",
-            ".claude/local/claude.cmd",
-            ".claude/local/claude",
-            ".local/bin/claude.exe",
-            ".local/bin/claude.cmd",
-            ".local/bin/claude",
-        ];
-        #[cfg(not(windows))]
-        let candidates = [".claude/local/claude", ".local/bin/claude"];
-        candidates
+        [".claude/local/claude", ".local/bin/claude"]
             .iter()
             .map(|rel| home.join(rel))
             .find(|c| c.is_file())

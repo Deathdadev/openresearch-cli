@@ -24,7 +24,7 @@ use std::sync::OnceLock;
 /// Deliberately short. These are the variables whose divergence makes the app
 /// and the CLI behave like different installs; credentials reach harness
 /// children through `chat::prepare_env` instead.
-pub const IMPORTED: [&str; 11] = [
+pub const IMPORTED: [&str; 8] = [
     "PATH",
     "ORX_DATA_DIR",
     "XDG_DATA_HOME",
@@ -33,9 +33,6 @@ pub const IMPORTED: [&str; 11] = [
     "CLAUDE_CONFIG_DIR",
     "CLAUDE_SECURESTORAGE_CONFIG_DIR",
     "CODEX_HOME",
-    "ANTHROPIC_BASE_URL",
-    "ANTHROPIC_API_KEY",
-    "ANTHROPIC_AUTH_TOKEN",
 ];
 
 static OVERRIDE: OnceLock<HashMap<&'static str, OsString>> = OnceLock::new();
@@ -196,9 +193,9 @@ mod tests {
     #[test]
     fn reads_every_imported_variable() {
         #[cfg(unix)]
-        let payload = "/opt/homebrew/bin:/usr/bin\0/data\0/share\0/config\0/open.db\0/claude\0/secure\0/codex\0http://127.0.0.1:8080\0sk-test\0token\0";
+        let payload = "/opt/homebrew/bin:/usr/bin\0/data\0/share\0/config\0/open.db\0/claude\0/secure\0/codex\0";
         #[cfg(windows)]
-        let payload = "C:\\opt\\homebrew\\bin;C:\\Windows\\System32\0/data\0/share\0/config\0/open.db\0/claude\0/secure\0/codex\0http://127.0.0.1:8080\0sk-test\0token\0";
+        let payload = "C:\\opt\\homebrew\\bin;C:\\Windows\\System32\0/data\0/share\0/config\0/open.db\0/claude\0/secure\0/codex\0";
         let vars = parse_probe(&fenced(payload), M).unwrap();
         #[cfg(unix)]
         assert_eq!(vars["PATH"], OsString::from("/opt/homebrew/bin:/usr/bin"));
@@ -217,20 +214,14 @@ mod tests {
             OsString::from("/secure")
         );
         assert_eq!(vars["CODEX_HOME"], OsString::from("/codex"));
-        assert_eq!(
-            vars["ANTHROPIC_BASE_URL"],
-            OsString::from("http://127.0.0.1:8080")
-        );
-        assert_eq!(vars["ANTHROPIC_API_KEY"], OsString::from("sk-test"));
-        assert_eq!(vars["ANTHROPIC_AUTH_TOKEN"], OsString::from("token"));
     }
 
     #[test]
     fn unset_variables_are_dropped_so_lookups_fall_through() {
         #[cfg(unix)]
-        let payload = "/usr/bin\0\0\0\0\0\0\0\0\0\0\0";
+        let payload = "/usr/bin\0\0\0\0\0\0\0\0";
         #[cfg(windows)]
-        let payload = "C:\\Windows\\System32\0\0\0\0\0\0\0\0\0\0\0";
+        let payload = "C:\\Windows\\System32\0\0\0\0\0\0\0\0";
         let vars = parse_probe(&fenced(payload), M).unwrap();
         #[cfg(unix)]
         assert_eq!(vars["PATH"], OsString::from("/usr/bin"));
