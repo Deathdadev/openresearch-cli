@@ -18,8 +18,8 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
 
-use serde_json::{json, Value};
 use crate::error::{anyhow, Result};
+use serde_json::{json, Value};
 
 /// Bundled Python launcher. Subcommands (argv[1]):
 ///   submit          spec JSON on stdin -> prints {"sandboxId": "sb-..."}

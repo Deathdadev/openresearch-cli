@@ -24,9 +24,6 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
-use async_trait::async_trait;
-use serde_json::Value;
-use tokio::io::{AsyncBufReadExt, BufReader};
 use super::detect::{
     bin_version, nonempty_str, parse_version, probe_bin, read_json, HarnessAuthState, HarnessInfo,
     ModelInfo,
@@ -46,6 +43,9 @@ use crate::local::claude::{SpawnConfig, SpawnSpec, TurnEvent};
 use crate::local::native_store::{self, NativeStore};
 use crate::local::opencode::ensure_playbook;
 use crate::local::shell_env::find_on_path;
+use async_trait::async_trait;
+use serde_json::Value;
+use tokio::io::{AsyncBufReadExt, BufReader};
 
 /// FALLBACK model list, used only when the `list_models` control request fails
 /// (a CLI too old to answer it, or a spawn/timeout failure). The primary source

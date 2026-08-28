@@ -32,10 +32,10 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
 
+use crate::error::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::io::AsyncWriteExt as _;
-use crate::error::{anyhow, Result};
 
 /// Env vars land in this namespace-local Secret; the primary Job gets an
 /// `envFrom` ref injected (`optional: true`, so an empty env file is fine);

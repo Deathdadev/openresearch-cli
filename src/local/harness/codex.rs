@@ -31,10 +31,6 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
-use serde::Deserialize;
-use serde_json::Value;
-use tokio::io::{AsyncBufReadExt, BufReader};
 use super::detect::{
     bin_version, jwt_payload, nonempty_str, parse_version, probe_bin, read_json, resolve_symlinks,
     title_case, HarnessInfo, ModelInfo,
@@ -58,6 +54,10 @@ use crate::local::native_store::{self, NativeStore};
 use crate::local::opencode::ensure_playbook;
 use crate::local::shell_env::find_on_path;
 use crate::store::{Store, StoredChatMessage};
+use async_trait::async_trait;
+use serde::Deserialize;
+use serde_json::Value;
+use tokio::io::{AsyncBufReadExt, BufReader};
 
 // FALLBACK model table, used only when the app-server catalog is unreachable
 // (codex < 0.144's legacy exec path, or a failed/timed-out `model/list`). The

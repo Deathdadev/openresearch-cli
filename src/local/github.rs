@@ -2,8 +2,8 @@
 
 use std::time::Duration;
 
-use serde_json::Value;
 use crate::error::{anyhow, Result};
+use serde_json::Value;
 
 const UA: &str = concat!("orx/", env!("CARGO_PKG_VERSION"));
 pub const SHALLOW_CLONE_THRESHOLD_KB: u64 = 250 * 1024;
